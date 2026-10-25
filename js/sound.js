@@ -467,6 +467,90 @@ const GENERATORS = {
     };
   },
 
+  // Tarde en París desde el palco: brisa, pájaros, la ciudad a lo lejos y, cada tanto, alguien
+  // peloteando en una cancha lejana.
+  paris(out) {
+    const c = audio();
+    const windGain = c.createGain();
+    windGain.gain.value = 0.8;
+    windGain.connect(out);
+    const wind = noiseLoop(windGain, 'brown', [{ type: 'lowpass', freq: 420 }], 0.14);
+    const city = noiseLoop(out, 'pink', [{ type: 'bandpass', freq: 240, q: 0.6 }], 0.03);
+    const echo = c.createDelay(1);
+    echo.delayTime.value = 0.19;
+    const fb = c.createGain();
+    fb.gain.value = 0.25;
+    echo.connect(fb).connect(echo);
+    echo.connect(out);
+    let alive = true;
+    const timers = [];
+    const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
+    const gust = () => {
+      const t = c.currentTime;
+      windGain.gain.cancelScheduledValues(t);
+      windGain.gain.setValueAtTime(windGain.gain.value, t);
+      windGain.gain.linearRampToValueAtTime(0.5 + Math.random() * 0.7, t + 4 + Math.random() * 4);
+      later(gust, 6000 + Math.random() * 5000);
+    };
+    const chirps = () => {
+      const t0 = c.currentTime;
+      const pan = c.createStereoPanner();
+      pan.pan.value = Math.random() * 1.6 - 0.8;
+      pan.connect(out);
+      const n = 3 + Math.floor(Math.random() * 5);
+      const base = 2600 + Math.random() * 2000;
+      for (let i = 0; i < n; i++) {
+        const at = t0 + i * (0.09 + Math.random() * 0.08);
+        const o = c.createOscillator();
+        o.frequency.setValueAtTime(base * (1 + Math.random() * 0.3), at);
+        o.frequency.exponentialRampToValueAtTime(base * (0.7 + Math.random() * 0.2), at + 0.06);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.012 + Math.random() * 0.01, at + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.08);
+        o.connect(g).connect(pan);
+        o.start(at);
+        o.stop(at + 0.1);
+      }
+      later(chirps, 900 + Math.random() * 3800);
+    };
+    const hit = (at, side) => {
+      const pan = c.createStereoPanner();
+      pan.pan.value = side * 0.55;
+      pan.connect(echo);
+      pan.connect(out);
+      burst(pan, { at, dur: 0.035, filter: 'bandpass', freq: 1300, q: 2, peak: 0.07 });
+      const o = c.createOscillator();
+      o.frequency.setValueAtTime(190, at);
+      o.frequency.exponentialRampToValueAtTime(120, at + 0.05);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.045, at + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.07);
+      o.connect(g).connect(pan);
+      o.start(at);
+      o.stop(at + 0.08);
+    };
+    const rally = () => {
+      const n = 5 + Math.floor(Math.random() * 7);
+      let at = c.currentTime + 0.1;
+      for (let i = 0; i < n; i++) {
+        hit(at, i % 2 ? 1 : -1);
+        at += 1.12 + Math.random() * 0.25;
+      }
+      later(rally, (n * 1.2 + 20 + Math.random() * 35) * 1000);
+    };
+    gust();
+    chirps();
+    later(rally, 6000);
+    return (t) => {
+      alive = false;
+      timers.forEach(clearTimeout);
+      wind.stop(t);
+      city.stop(t);
+    };
+  },
+
   // Lluvia en el ventanal, acordes ambientales largos y notas sueltas de piano.
   city(out) {
     const c = audio();
@@ -589,6 +673,40 @@ export const sound = {
   thunder() {
     if (current.mode !== 'city' || !ctx) return;
     thunderRoll(ambBus, audio().currentTime + 0.8 + Math.random() * 1.4, 1);
+  },
+
+  // Aspersores regando la arcilla (palco de tierra batida): siseo con el "tic-tic" del aspersor.
+  sprinkler(seconds) {
+    if (current.mode !== 'paris' || !ctx) return;
+    const c = audio();
+    const at = c.currentTime + 0.1;
+    const end = at + seconds;
+    const src = c.createBufferSource();
+    src.buffer = noise('pink', 4);
+    src.loop = true;
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1800;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 4200;
+    const pulse = c.createGain();
+    pulse.gain.value = 0.6;
+    const lfo = c.createOscillator();
+    lfo.frequency.value = 6;
+    const lfoGain = c.createGain();
+    lfoGain.gain.value = 0.4;
+    lfo.connect(lfoGain).connect(pulse.gain);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(0.05, at + 0.8);
+    g.gain.setValueAtTime(0.05, end - 1);
+    g.gain.linearRampToValueAtTime(0.0001, end);
+    src.connect(hp).connect(lp).connect(pulse).connect(g).connect(ambBus);
+    src.start(at);
+    lfo.start(at);
+    src.stop(end + 0.1);
+    lfo.stop(end + 0.1);
   },
 
   // Pasada de autos: `times` son los segundos (desde ahora) en que cada auto cruza frente a la suite.

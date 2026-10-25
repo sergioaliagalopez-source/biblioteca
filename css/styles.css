@@ -236,6 +236,24 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 .tc-price s { opacity: 0.6; }
 .tc-price em { font-style: normal; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #1a120b; background: var(--gold); padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
 
+/* Fondos pagos: candado y precio */
+.tc-lock { position: absolute; z-index: 1; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%; display: none; place-items: center; background: rgba(10, 7, 5, 0.75); color: var(--gold-2); border: 1px solid var(--gold-line); }
+.tc-lock svg, .tc-price.buy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.theme-card.locked .tc-lock { display: grid; }
+.theme-card.locked .tc-img { filter: saturate(0.85); }
+.tc-price.buy { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--gold); color: #1a120b; font-weight: 600; }
+.dev-badge { margin-left: 10px; padding: 2px 7px; border-radius: 4px; background: #2f6b3a; color: #e8f5e9; font: 600 11px/1.4 var(--text); letter-spacing: 0.12em; }
+.dev-badge[hidden] { display: none; }
+
+/* Ficha de compra */
+.purchase { text-align: center; }
+.pu-img { margin: -6px -10px 16px; aspect-ratio: 16 / 9; max-height: 34vh; width: calc(100% + 20px); max-width: none; border-radius: 3px; background: #2a1d14 center / cover; box-shadow: 0 10px 30px rgba(40, 25, 10, 0.35); }
+.pu-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 6px 0 22px; }
+.pu-code { text-align: left; border-top: 1px solid rgba(120, 90, 45, 0.25); padding-top: 16px; }
+.pu-code label { margin-bottom: 10px; }
+.pu-code input { font-family: ui-monospace, Consolas, monospace; font-size: 15px; }
+.pu-msg { min-height: 1.4em; margin: 10px 0 0; font-style: italic; color: #7a2a1a; }
+
 /* Transición entre fondos: la sala se oscurece y aparece el nombre del nuevo ambiente */
 #curtain {
   position: fixed; inset: 0; z-index: 90; pointer-events: none;

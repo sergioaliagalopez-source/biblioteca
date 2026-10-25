@@ -37,13 +37,19 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   (Los PDF escaneados como imagen no tienen texto, así que no se pueden resaltar.)
 - **Buscar**: la lupa de arriba (o `Ctrl+K`, o la tecla `/`). Escribe parte del título, el autor o la categoría
   (sin importar tildes); con `↑` `↓` eliges y `Enter` abre el libro. Sin escribir nada, muestra los leídos recientemente.
-- **Fondos**: botón de abajo a la derecha. Cinco ambientes, cada uno con su sonido:
-  **Biblioteca clásica** (chimenea, incluida), **Mansión frente al mar** (olas), **Salón de jazz** (jazz suave),
-  **Ático moderno** (lluvia tranquila y piano, con relámpagos y truenos) y **Paddock Club** (suite sobre la recta:
-  cada 45 segundos se encienden los semáforos y pasan los autos; cascos, autos a escala y un traje enmarcado). Precio previsto 0,99 US$ cada uno; gratis mientras la app está en prueba
-  (`FREE_TRIAL` en `js/themes.js`).
+- **Fondos**: botón de abajo a la derecha. Seis ambientes, cada uno con su sonido.
+  Incluidos con la app: **Biblioteca clásica** (chimenea), **Mansión frente al mar** (olas),
+  **Salón de jazz** (jazz suave) y **Ático moderno** (lluvia tranquila y piano, con relámpagos y truenos).
+  De pago, 0,99 US$ cada uno:
+  - **Paddock Club**: suite sobre la recta. Cada 45 segundos se encienden los semáforos y pasan los autos.
+    Tiene cascos, autos a escala y un traje enmarcado.
+  - **Palco de tierra batida**: palco vacío frente a una cancha de arcilla en París.
+    En el cielo pasan globo, avión y pájaros. Un cuidador pasa la alfombra por la cancha y cada tanto se encienden los aspersores.
+    Tiene pelotas firmadas, raquetas, copas de campeón de otros años y un tubo de pelotas.
+
+  Un fondo bloqueado muestra un candado. Al tocarlo ofrece **Comprar**, **Probar 30 segundos** o **pegar el código** recibido por email.
 - **Sonido**: ícono de parlante arriba (y en la barra del lector). Volumen general, ambiente y hojas/cinta;
-  y el ambiente: el del fondo, o chimenea, olas, jazz, lluvia y piano, lluvia o silencio.
+  y el ambiente: el del fondo, o chimenea, olas, jazz, lluvia y piano, motores, tarde en París, lluvia o silencio.
 
 ## Atajos en el lector
 
@@ -65,3 +71,29 @@ Funciona en Chrome o Edge de computadora.
 ## Si no conectas una carpeta
 
 Todo queda en el propio navegador de esta PC. Tus archivos PDF originales no se tocan.
+
+## Versión de desarrollador (todo desbloqueado)
+
+- **En la PC** (`Abrir Biblioteca.bat`, `localhost`): siempre es versión de desarrollador.
+  Aparece la etiqueta **DEV** junto al nombre.
+- **En cualquier otro dispositivo**: abre una vez la dirección publicada con `#dev=TU-CÓDIGO` al final.
+  El código es el que te dio Claude; no lo escribas en este repositorio, que es público.
+  Queda activado en ese dispositivo hasta que abras la dirección con `#dev=off`.
+- **Versión pública**: la dirección publicada tal cual. Ahí los fondos de pago muestran el candado.
+
+## Cobrar los fondos (Lemon Squeezy)
+
+Lemon Squeezy cobra con tarjeta o PayPal en todo el mundo, se ocupa de los impuestos y te paga a tu
+banco o a PayPal. Comisión aproximada: 5 % + 0,50 US$ por venta.
+
+1. Crea una cuenta en lemonsqueezy.com y una tienda. Completa los datos de pago (Settings → Payouts).
+2. Crea un producto por fondo, «Paddock Club» y «Palco de tierra batida», a 0,99 US$.
+   En cada uno activa **Generate license keys**, con un límite de activaciones de 5.
+3. Copia en `js/store.js`, dentro de `PAYMENTS`:
+   - `storeId`: el número de la tienda (Settings → Stores).
+   - Para cada fondo, `checkout`: el enlace de compra del producto (Share → enlace).
+   - Para cada fondo, `productId`: el número del producto (aparece en la dirección al editarlo).
+4. Publica. Mientras falten esos datos, **Comprar** avisa que los pagos aún no están habilitados.
+
+Cómo compra la gente: toca **Comprar**, paga y recibe por email un código de licencia.
+Lo pega en la app y el fondo queda desbloqueado. El mismo código sirve en sus otros dispositivos.

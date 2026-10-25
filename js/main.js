@@ -6,7 +6,8 @@ import { Reader, HL_COLORS } from './reader.js';
 import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects } from './pdfdoc.js';
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
-import { THEMES, AMBIENTS, themeById, isUnlocked } from './themes.js';
+import { THEMES, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js';
+import { devMode, isOwned, paymentsReady, checkoutUrl, redeem, checkDevLink } from './store.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -20,6 +21,7 @@ const ICON = {
   shelf: '<svg viewBox="0 0 24 24"><path d="M4 3.5v17M20 3.5v17M4 9.5h16M4 15.5h16M3 20.5h18"/><path d="M7 9.5V5.5M9.5 9.5V6M12.5 15.5v-4M15 15.5l1.6-4"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
 };
 
 const state = {
@@ -43,6 +45,9 @@ async function boot() {
     document.fonts.load('400 16px "EB Garamond"'),
   ]).catch(() => {});
   navigator.storage?.persist?.().catch(() => {});
+  const devMsg = await checkDevLink();
+  // Si el fondo guardado ya no está disponible (p. ej. se apagó el modo desarrollador), se vuelve al clásico.
+  if (!isUnlocked(themeById(state.theme))) state.theme = 'clasica';
 
   await restoreFolder();
   await loadLibrary();
@@ -61,6 +66,7 @@ async function boot() {
       theme: state.theme,
       onThunder: () => sound.thunder(),
       onRace: (times) => sound.race(times),
+      onSprinkler: (seconds) => sound.sprinkler(seconds),
       onHover: showTooltip,
       onOpen: openBook,
       onContext: bookMenu,
@@ -78,6 +84,15 @@ async function boot() {
   updateThemeButton();
   updateSoundIcons();
   updateCloud();
+  updateDevBadge();
+  if (devMsg) setTimeout(() => toast(devMsg, 4500), 1200);
+  window.addEventListener('hashchange', async () => {
+    const m = await checkDevLink();
+    if (!m) return;
+    toast(m, 4500);
+    updateDevBadge();
+    if (!isUnlocked(themeById(state.theme))) chooseTheme('clasica');
+  });
   registerServiceWorker();
   if (!db.persistent && !db.folder) {
     const warn = () => toast('Este navegador no deja guardar datos aquí: tus libros sólo durarán hasta cerrar la pestaña. Abre la app con «Abrir Biblioteca.bat».', 9000);
@@ -1033,14 +1048,16 @@ function updateThemeButton() {
 }
 
 function renderThemeCards() {
-  const price = (t) =>
-    t.price === 0
-      ? '<span class="tc-price">Incluido</span>'
-      : `<span class="tc-price"><s>${t.price.toFixed(2).replace('.', ',')} US$</s>${isUnlocked(t) ? ' <em>Gratis en la prueba</em>' : ''}</span>`;
+  const price = (t) => {
+    if (t.price === 0) return '<span class="tc-price">Incluido</span>';
+    if (isOwned(t.id)) return '<span class="tc-price">Comprado</span>';
+    if (devMode()) return `<span class="tc-price">${priceLabel(t)} <em>Desarrollador</em></span>`;
+    return `<span class="tc-price buy">${ICON.lock}${priceLabel(t)}</span>`;
+  };
   $('#themeCards').innerHTML = THEMES.map(
     (t) => `
-    <button class="theme-card ${t.id === state.theme ? 'on' : ''}" data-id="${t.id}">
-      <span class="tc-img" style="background-image:url('${t.preview}')"><span class="tc-check">${ICON.check}</span></span>
+    <button class="theme-card ${t.id === state.theme ? 'on' : ''} ${isUnlocked(t) ? '' : 'locked'}" data-id="${t.id}">
+      <span class="tc-img" style="background-image:url('${t.preview}')"><span class="tc-check">${ICON.check}</span><span class="tc-lock">${ICON.lock}</span></span>
       <span class="tc-body">
         <span class="tc-name">${esc(t.name)}</span>
         <span class="tc-mood">${esc(t.mood)}</span>
@@ -1068,11 +1085,12 @@ function closeThemes() {
 // Cambio de fondo: la sala se oscurece, aparece el nombre del nuevo fondo, y la cámara entra
 // al nuevo ambiente mientras el sonido cambia con un fundido.
 let switchingTheme = false;
-async function chooseTheme(id) {
+async function chooseTheme(id, { preview = false } = {}) {
   const t = themeById(id);
   closeThemes();
   if (id === state.theme || switchingTheme || state.reading) return;
-  if (!isUnlocked(t)) return toast(`«${t.name}» cuesta ${t.price.toFixed(2).replace('.', ',')} US$`);
+  if (!isUnlocked(t) && !preview) return showPurchase(t);
+  if (!preview) endPreview();
   switchingTheme = true;
   const curtain = $('#curtain');
   curtain.querySelector('h2').textContent = t.name;
@@ -1081,7 +1099,8 @@ async function chooseTheme(id) {
   await wait(800);
   lib.setTheme(id);
   state.theme = id;
-  prefs.set('bib.theme', id);
+  // Una prueba gratuita no queda guardada: al volver a abrir la app se usa el último fondo propio.
+  if (!preview) prefs.set('bib.theme', id);
   lib.dollyIn();
   applyAmbient();
   updateThemeButton();
@@ -1089,6 +1108,92 @@ async function chooseTheme(id) {
   curtain.classList.remove('show');
   await wait(900);
   switchingTheme = false;
+}
+
+// ---------- Compra de fondos ----------
+
+function updateDevBadge() {
+  $('#devBadge').hidden = !devMode();
+}
+
+
+// Ficha de un fondo pago: comprar, ingresar el código recibido por email o probarlo 30 segundos.
+function showPurchase(t) {
+  modal(
+    `<div class="purchase">
+       <div class="pu-img" style="background-image:url('${t.preview}')"></div>
+       <h2>${esc(t.name)}</h2>
+       <p class="sub">${esc(t.mood)} · Sonido: ${esc(AMBIENTS[t.sound])}</p>
+       <div class="pu-actions">
+         <button class="btn-dark" data-act="buy">Comprar por ${priceLabel(t)}</button>
+         <button class="btn-ghost" data-act="try">Probar 30 segundos</button>
+       </div>
+       <div class="pu-code">
+         <label><span>¿Ya lo compraste? Pega el código que te llegó por email</span>
+         <input type="text" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" autocomplete="off" spellcheck="false"></label>
+         <button class="btn-ghost" data-act="redeem">Activar</button>
+         <p class="pu-msg" aria-live="polite"></p>
+       </div>
+     </div>`,
+    {
+      wide: true,
+      onMount(card, close) {
+        const msg = card.querySelector('.pu-msg');
+        const input = card.querySelector('.pu-code input');
+        card.addEventListener('click', async (e) => {
+          const act = e.target.closest('[data-act]')?.dataset.act;
+          if (act === 'buy') {
+            if (!paymentsReady(t.id)) {
+              msg.textContent = 'Los pagos todavía no están habilitados en esta versión. ¡Muy pronto!';
+              return;
+            }
+            window.open(checkoutUrl(t.id), '_blank', 'noopener');
+            msg.textContent = 'Al terminar el pago te llega un email con tu código: pégalo aquí abajo.';
+          } else if (act === 'try') {
+            close(null);
+            previewTheme(t);
+          } else if (act === 'redeem') {
+            const btn = e.target.closest('[data-act]');
+            btn.disabled = true;
+            msg.textContent = 'Comprobando el código…';
+            try {
+              const id = await redeem(input.value);
+              close(null);
+              toast(`¡Gracias! «${themeById(id).name}» ya es tuyo`, 4000);
+              chooseTheme(id);
+            } catch (err) {
+              msg.textContent = err.message;
+            } finally {
+              btn.disabled = false;
+            }
+          }
+        });
+        input.addEventListener('keydown', (e) => e.key === 'Enter' && card.querySelector('[data-act=redeem]').click());
+      },
+    }
+  );
+}
+
+// Prueba gratuita: 30 segundos en el fondo y después vuelve al que estabas usando.
+let previewTimer = null;
+let previewReturn = null;
+async function previewTheme(t) {
+  previewReturn ??= state.theme;
+  clearTimeout(previewTimer);
+  await chooseTheme(t.id, { preview: true });
+  toast(`Probando «${t.name}» por 30 segundos`, 3500);
+  previewTimer = setTimeout(() => {
+    const back = previewReturn;
+    previewReturn = null;
+    if (state.reading || state.theme !== t.id) return;
+    toast('Terminó la prueba. Puedes comprarlo desde «Fondos».', 4500);
+    chooseTheme(back);
+  }, 30000);
+}
+
+function endPreview() {
+  clearTimeout(previewTimer);
+  previewReturn = null;
 }
 
 // ---------- Sonido ----------

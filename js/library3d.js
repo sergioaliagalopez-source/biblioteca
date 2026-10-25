@@ -2,8 +2,11 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { spineCanvas, plaqueCanvas, decorSpineCanvas, paintingCanvas, dustSprite, seeded, hashStr, PALETTE, clamp } from './textures.js';
-import { BC, FRONT_Z, tex, computeBays, SCENES, sceneMaterials, pagesMaterial, LIVERIES, buildF1Car, buildHelmet, buildFramedSuit } from './scenes.js';
-import { checkerCanvas, wheelScreenCanvas } from './textures.js';
+import {
+  BC, FRONT_Z, tex, computeBays, SCENES, sceneMaterials, pagesMaterial, LIVERIES,
+  buildF1Car, buildHelmet, buildFramedSuit, buildJumboBall, buildRacket, buildSilverCup,
+} from './scenes.js';
+import { checkerCanvas, wheelScreenCanvas, clayCourtCanvas } from './textures.js';
 
 const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
@@ -662,6 +665,84 @@ export class Library3D {
       g.children.forEach((c) => (c.position.x -= 0.08));
       this.dynamic.push(ftex, fmat, geo, pole.geometry, foot.geometry);
       g.userData.w = 0.26;
+      return g;
+    }
+    // ---- Tenis en París (palco de tierra batida) ----
+    if (kind === 'jumboball' && maxW > 0.24) {
+      g.add(buildJumboBall(Math.floor(rnd() * 1000), this.dynamic));
+      g.userData.w = 0.24;
+      return g;
+    }
+    if (kind === 'racket' && maxW > 0.3) {
+      // Dos raquetas cruzadas, apoyadas contra el fondo.
+      const colors = [[0xf2f2ee, 0x1d5236], [0x1b1b1b, 0xc2623a], [0xc2623a, 0xf2f2ee]];
+      for (const [i, s] of [[0, -1], [1, 1]]) {
+        const [frame, grip] = colors[Math.floor(rnd() * colors.length)];
+        const r = buildRacket(frame, grip, this.dynamic);
+        r.scale.setScalar(0.88);
+        r.position.set(s * 0.06, 0, -0.08 + i * 0.03);
+        r.rotation.set(-0.12, s * 0.15, s * -0.32);
+        g.add(r);
+      }
+      g.userData.w = 0.32;
+      return g;
+    }
+    if (kind === 'silvercup' && maxW > 0.24) {
+      const years = [1955, 1968, 1975, 1982, 1989, 1994, 2001, 2008, 2013, 2019];
+      g.add(buildSilverCup(this.mat, years[Math.floor(rnd() * years.length)], this.dynamic));
+      g.userData.w = 0.24;
+      return g;
+    }
+    if (kind === 'balltube' && maxW > 0.22) {
+      // Tubos de pelotas: blanco con franja verde, tapa transparente y pelotas adentro.
+      const tubeMat = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.4 });
+      const bandMat = new THREE.MeshStandardMaterial({ color: 0x1d5236, roughness: 0.5 });
+      const tubeGeo = new THREE.CylinderGeometry(0.038, 0.038, 0.26, 24);
+      const bandGeo = new THREE.CylinderGeometry(0.0385, 0.0385, 0.05, 24);
+      const capGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.015, 24);
+      const ballGeo = new THREE.SphereGeometry(0.033, 16, 12);
+      const ballMat = new THREE.MeshStandardMaterial({ color: 0xd7e43a, roughness: 0.95 });
+      [[-0.05, 0], [0.05, 0], [0, 0.27]].forEach(([x, y], i) => {
+        const tube = new THREE.Mesh(tubeGeo, tubeMat);
+        tube.position.set(x, y + 0.13, 0);
+        if (i === 2) {
+          tube.rotation.z = Math.PI / 2;
+          tube.position.set(0, 0.3, 0);
+        }
+        const band = new THREE.Mesh(bandGeo, bandMat);
+        band.position.copy(tube.position);
+        band.rotation.copy(tube.rotation);
+        tube.castShadow = true;
+        g.add(tube, band);
+        if (i < 2) {
+          const cap = new THREE.Mesh(capGeo, this.mat.woodDark);
+          cap.position.set(x, 0.268, 0);
+          g.add(cap);
+        }
+      });
+      const loose = new THREE.Mesh(ballGeo, ballMat);
+      loose.position.set(0.11, 0.033, 0.05);
+      g.add(loose);
+      this.dynamic.push(tubeMat, bandMat, tubeGeo, bandGeo, capGeo, ballGeo, ballMat);
+      g.userData.w = 0.26;
+      return g;
+    }
+    if (kind === 'claytray' && maxW > 0.36) {
+      // Maqueta de la cancha de arcilla con su red, en una bandeja de nogal.
+      const tray = new THREE.Mesh(this.unitBox, this.mat.woodDark);
+      tray.scale.set(0.34, 0.03, 0.2);
+      tray.position.y = 0.015;
+      const ctex = tex(clayCourtCanvas());
+      const cmat = new THREE.MeshStandardMaterial({ map: ctex, roughness: 0.95 });
+      const clay = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.18), cmat);
+      clay.rotation.x = -Math.PI / 2;
+      clay.position.y = 0.031;
+      const netMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.02), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+      netMesh.rotation.y = Math.PI / 2;
+      netMesh.position.set(0, 0.041, 0);
+      g.add(tray, clay, netMesh);
+      this.dynamic.push(ctex, cmat, clay.geometry, netMesh.geometry, netMesh.material);
+      g.userData.w = 0.36;
       return g;
     }
     if (kind === 'sculpture' && maxW > 0.22) {

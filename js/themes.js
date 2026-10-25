@@ -1,7 +1,5 @@
-// Catálogo de fondos que ve el usuario: nombre, ambiente, sonido y precio.
-// Mientras la app está en prueba (FREE_TRIAL) todos los fondos se pueden usar gratis.
-
-export const FREE_TRIAL = true;
+// Catálogo de fondos que ve el usuario: nombre, ambiente, sonido y precio (0 = incluido con la app).
+import { devMode, isOwned } from './store.js';
 
 export const THEMES = [
   {
@@ -17,7 +15,7 @@ export const THEMES = [
     name: 'Mansión frente al mar',
     mood: 'Mármol, oro y el océano al atardecer',
     sound: 'ocean',
-    price: 0.99,
+    price: 0,
     preview: 'themes/mansion.jpg',
   },
   {
@@ -25,7 +23,7 @@ export const THEMES = [
     name: 'Salón de jazz',
     mood: 'Nogal, art déco y un vinilo girando',
     sound: 'jazz',
-    price: 0.99,
+    price: 0,
     preview: 'themes/jazz.jpg',
   },
   {
@@ -33,7 +31,7 @@ export const THEMES = [
     name: 'Ático moderno',
     mood: 'Roble, luces de la ciudad y lluvia en el vidrio',
     sound: 'city',
-    price: 0.99,
+    price: 0,
     preview: 'themes/atico.jpg',
   },
   {
@@ -43,6 +41,14 @@ export const THEMES = [
     sound: 'paddock',
     price: 0.99,
     preview: 'themes/paddock.jpg',
+  },
+  {
+    id: 'tierra',
+    name: 'Palco de tierra batida',
+    mood: 'París, arcilla roja y trofeos de campeón',
+    sound: 'paris',
+    price: 0.99,
+    preview: 'themes/tierra.jpg',
   },
 ];
 
@@ -54,10 +60,13 @@ export const AMBIENTS = {
   jazz: 'Jazz suave',
   city: 'Lluvia y piano',
   paddock: 'Motores y tribuna',
+  paris: 'Tarde en París',
   rain: 'Lluvia',
   off: 'Silencio',
 };
 
 export const themeById = (id) => THEMES.find((t) => t.id === id) || THEMES[0];
 
-export const isUnlocked = (theme) => FREE_TRIAL || theme.price === 0;
+export const isUnlocked = (theme) => theme.price === 0 || devMode() || isOwned(theme.id);
+
+export const priceLabel = (theme) => `${theme.price.toFixed(2).replace('.', ',')} US$`;

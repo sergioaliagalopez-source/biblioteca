@@ -592,6 +592,104 @@ export function bannerCanvas() {
   return c;
 }
 
+// ---------- Palco de tierra batida (tenis en París) ----------
+
+// Cancha de arcilla vista desde el palco: 44 m (x) por 22,6 m (z), con la cancha centrada.
+export function clayCourtCanvas() {
+  const w = 1024, h = 526, ppm = w / 44;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const rnd = seeded(33);
+  g.fillStyle = '#c2623a';
+  g.fillRect(0, 0, w, h);
+  // marcas de arrastre de la alfombra y variaciones de la arcilla
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = `rgba(${rnd() < 0.5 ? '120,45,20' : '235,150,105'},${0.05 + rnd() * 0.08})`;
+    g.fillRect(rnd() * w, rnd() * h, 6 + rnd() * 40, 1 + rnd() * 2);
+  }
+  grain(g, w, h, 0.07, rnd);
+  const X = (m) => w / 2 + m * ppm; // metros desde la red
+  // laterales de dobles a 4,1 m y 15,07 m del borde lejano del lienzo (la cancha mide 10,97 m de ancho)
+  const y0 = 4.1 * ppm, y1 = 15.07 * ppm, single = 1.37 * ppm;
+  g.strokeStyle = '#f6f1e8';
+  g.lineWidth = 2.2;
+  g.strokeRect(X(-11.885), y0, 23.77 * ppm, y1 - y0); // dobles
+  g.beginPath();
+  g.moveTo(X(-11.885), y0 + single); g.lineTo(X(11.885), y0 + single); // individuales
+  g.moveTo(X(-11.885), y1 - single); g.lineTo(X(11.885), y1 - single);
+  g.moveTo(X(-6.4), y0 + single); g.lineTo(X(-6.4), y1 - single); // líneas de saque
+  g.moveTo(X(6.4), y0 + single); g.lineTo(X(6.4), y1 - single);
+  g.moveTo(X(-6.4), (y0 + y1) / 2); g.lineTo(X(6.4), (y0 + y1) / 2); // línea central
+  g.moveTo(X(-11.885), (y0 + y1) / 2); g.lineTo(X(-11.885) + 6, (y0 + y1) / 2);
+  g.moveTo(X(11.885), (y0 + y1) / 2); g.lineTo(X(11.885) - 6, (y0 + y1) / 2);
+  g.stroke();
+  return c;
+}
+
+// Pelota gigante de tenis firmada (fieltro amarillo verdoso, costura blanca y firmas).
+export function jumboBallCanvas(seed = 1) {
+  const w = 512, h = 256;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const rnd = seeded(seed);
+  g.fillStyle = '#d7e43a';
+  g.fillRect(0, 0, w, h);
+  grain(g, w, h, 0.12, rnd);
+  g.strokeStyle = '#f7f7ef';
+  g.lineWidth = 9;
+  g.beginPath();
+  for (let x = 0; x <= w; x += 4) {
+    const y = h / 2 + Math.sin((x / w) * Math.PI * 4) * h * 0.28;
+    if (x === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  }
+  g.stroke();
+  // firmas
+  g.strokeStyle = 'rgba(20,20,30,0.85)';
+  g.lineWidth = 2.4;
+  g.lineCap = 'round';
+  for (let s = 0; s < 4; s++) {
+    let x = 30 + rnd() * (w - 160), y = 40 + rnd() * (h - 80);
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let i = 0; i < 9; i++) {
+      x += 8 + rnd() * 10;
+      g.quadraticCurveTo(x - 6, y + (rnd() - 0.5) * 40, x, y + (rnd() - 0.5) * 14);
+    }
+    g.stroke();
+  }
+  return c;
+}
+
+// Encordado de raqueta (transparente entre las cuerdas).
+export function stringsCanvas() {
+  const S = 128;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, S, S);
+  g.strokeStyle = 'rgba(245,245,235,0.95)';
+  g.lineWidth = 1.4;
+  for (let i = 4; i < S; i += 8) {
+    g.beginPath(); g.moveTo(i, 0); g.lineTo(i, S); g.stroke();
+    g.beginPath(); g.moveTo(0, i); g.lineTo(S, i); g.stroke();
+  }
+  return c;
+}
+
+// Red de tenis: malla oscura con la faja blanca arriba.
+export function netCanvas() {
+  const c = makeCanvas(512, 64);
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 512, 64);
+  g.strokeStyle = 'rgba(20,24,22,0.85)';
+  g.lineWidth = 1;
+  for (let x = 0; x < 512; x += 5) { g.beginPath(); g.moveTo(x, 6); g.lineTo(x, 64); g.stroke(); }
+  for (let y = 6; y < 64; y += 5) { g.beginPath(); g.moveTo(0, y); g.lineTo(512, y); g.stroke(); }
+  g.fillStyle = '#f5f5ee';
+  g.fillRect(0, 0, 512, 7);
+  return c;
+}
+
 // ---------- Placa de bronce grabada ----------
 
 export function plaqueCanvas(text, style = 'brass') {

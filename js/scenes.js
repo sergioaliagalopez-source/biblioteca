@@ -3,9 +3,10 @@
 import * as THREE from 'three';
 import {
   woodCanvas, floorCanvas, wallCanvas, paperEdgeCanvas, globeCanvas, marbleCanvas, concreteCanvas,
-  decoWallCanvas, curtainCanvas, vinylCanvas, carbonCanvas, trackCanvas, helmetCanvas, suitCanvas, bannerCanvas, PALETTE,
+  decoWallCanvas, curtainCanvas, vinylCanvas, carbonCanvas, trackCanvas, helmetCanvas, suitCanvas, bannerCanvas,
+  clayCourtCanvas, jumboBallCanvas, stringsCanvas, netCanvas, PALETTE,
 } from './textures.js';
-import { seaBackdrop, cityBackdrop, paddockBackdrop } from './backdrops.js';
+import { seaBackdrop, cityBackdrop, paddockBackdrop, tierraBackdrop } from './backdrops.js';
 
 // Estantería principal (metros). Las filas indican la altura de cada balda.
 export const BC = { w: 4.2, h: 3.04, d: 0.42, z: -1.8, rows: [0.72, 1.3, 1.88, 2.46], side: 0.06, shelfT: 0.035, divider: 0.035, base: 0.66 };
@@ -722,6 +723,252 @@ SCENES.paddock = {
       if (x < 90) running = true;
     }
     if (!running && k > 5) fx.race = null;
+  },
+};
+
+// ---------- Tenis: pelotas, raquetas y trofeos ----------
+
+export function buildJumboBall(seed, track = []) {
+  const keep = (x) => (track.push(x), x);
+  const g = new THREE.Group();
+  const ball = new THREE.Mesh(keep(new THREE.SphereGeometry(0.1, 40, 28)), keep(std({ map: keep(tex(jumboBallCanvas(seed))), roughness: 0.95 })));
+  ball.position.y = 0.125;
+  ball.rotation.set(0.2, 0.4 + seed, 0.1);
+  ball.castShadow = true;
+  const ring = new THREE.Mesh(keep(new THREE.TorusGeometry(0.045, 0.008, 8, 28)), keep(std({ color: 0xd8d8d2, metalness: 0.9, roughness: 0.25 })));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.022;
+  g.add(ring, ball);
+  return g;
+}
+
+// Raqueta de ~0,6 m: aro (elipse), encordado, garganta y mango con grip.
+export function buildRacket(frameColor, gripColor, track = []) {
+  const keep = (x) => (track.push(x), x);
+  const g = new THREE.Group();
+  const frameMat = keep(std({ color: frameColor, roughness: 0.35, metalness: 0.3 }));
+  const rim = new THREE.Mesh(keep(new THREE.TorusGeometry(0.1, 0.008, 8, 40)), frameMat);
+  rim.scale.set(0.82, 1.15, 1);
+  rim.position.y = 0.44;
+  const strings = new THREE.Mesh(keep(new THREE.CircleGeometry(0.1, 32)), keep(std({ map: keep(tex(stringsCanvas())), transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, roughness: 0.6 })));
+  strings.scale.set(0.8, 1.13, 1);
+  strings.position.y = 0.44;
+  const throatGeo = keep(new THREE.CylinderGeometry(0.006, 0.006, 0.14, 8));
+  for (const s of [-1, 1]) {
+    const th = new THREE.Mesh(throatGeo, frameMat);
+    th.position.set(s * 0.03, 0.27, 0);
+    th.rotation.z = s * 0.22;
+    g.add(th);
+  }
+  const handle = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.014, 0.016, 0.2, 8)), keep(std({ color: gripColor, roughness: 0.8 })));
+  handle.position.y = 0.11;
+  const butt = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.017, 0.017, 0.015, 8)), frameMat);
+  butt.position.y = 0.005;
+  g.add(rim, strings, handle, butt);
+  g.traverse((m) => (m.castShadow = true));
+  return g;
+}
+
+// Copa de campeón plateada con tapa y asas (réplica de colección), sobre peana con placa del año.
+export function buildSilverCup(mats, year, track = [], scale = 1) {
+  const keep = (x) => (track.push(x), x);
+  const g = new THREE.Group();
+  const pts = [[0, 0], [0.07, 0], [0.07, 0.03], [0.03, 0.05], [0.022, 0.12], [0.05, 0.15], [0.085, 0.22], [0.095, 0.3], [0.09, 0.31], [0.06, 0.32], [0.035, 0.36], [0.012, 0.37], [0.016, 0.39], [0, 0.4]].map(([a, b]) => new THREE.Vector2(a, b));
+  const cup = new THREE.Mesh(keep(new THREE.LatheGeometry(pts, 48)), mats.silver);
+  cup.position.y = 0.06;
+  const handleGeo = keep(new THREE.TorusGeometry(0.05, 0.007, 8, 24, Math.PI * 1.3));
+  for (const s of [-1, 1]) {
+    const h = new THREE.Mesh(handleGeo, mats.silver);
+    h.position.set(s * 0.1, 0.32, 0);
+    h.rotation.z = s > 0 ? -1.2 : Math.PI - 1.2 + Math.PI * 0.3 - 0.3;
+    g.add(h);
+  }
+  const base = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.09, 0.1, 0.06, 32)), mats.woodDark);
+  base.position.y = 0.03;
+  const plate = new THREE.Mesh(keep(new THREE.PlaneGeometry(0.07, 0.025)), keep(std({ map: keep(tex(yearPlateCanvas(year))), metalness: 0.6, roughness: 0.3 })));
+  plate.position.set(0, 0.03, 0.0955);
+  cup.castShadow = true;
+  g.add(base, plate, cup);
+  g.scale.setScalar(scale);
+  return g;
+}
+
+function yearPlateCanvas(year) {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 46;
+  const g = c.getContext('2d');
+  g.fillStyle = '#c9a25a';
+  g.fillRect(0, 0, 128, 46);
+  g.fillStyle = '#2b1d08';
+  g.font = '600 30px "Cormorant Garamond", Georgia, serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(String(year), 64, 25);
+  return c;
+}
+
+// Palco de tierra batida: estantería verde lacada con bronce frente a la cancha de arcilla de un
+// estadio vacío de París. Hay vida: un cuidador pasa la alfombra por la cancha, aspersores riegan la
+// arcilla cada tanto y en el cielo pasan pájaros, un globo y un avión.
+SCENES.tierra = {
+  background: 0xb8d0ea,
+  fog: [0xd2deea, 30, 100],
+  exposure: 1.02,
+  palette: ['#1d5236', '#c2623a', '#f2efe6', '#0f3a26', '#e3d6b8', '#8a3a1e', '#2a2a2a', '#cdb68a'],
+  paletteGain: 0.88,
+  plaque: 'brass',
+  decor: {
+    first: 'silvercup',
+    kinds: ['jumboball', 'jumboball', 'racket', 'racket', 'silvercup', 'silvercup', 'balltube', 'claytray', 'old', 'old', 'stack'],
+    caps: { jumboball: 3, racket: 3, silvercup: 3, balltube: 2, claytray: 1, stack: 2 },
+  },
+  particles: { count: 160, size: 0.012, color: 0xfff1d6, opacity: 0.35, rise: 0.5 },
+  materials: (env) => ({
+    wood: std({ map: tex(woodCanvas({ seed: 61, base: '#1d4a32', dark: '#123222', light: '#2c6646', lines: 60 })), roughness: 0.28, envMap: env, envMapIntensity: 0.5 }),
+    woodDark: std({ color: 0x173d29, roughness: 0.35, envMap: env, envMapIntensity: 0.4 }),
+    panel: std({ map: tex(woodCanvas({ seed: 63, base: '#225638', dark: '#163b27', light: '#2f6e4a', lines: 40 })), roughness: 0.26, envMap: env, envMapIntensity: 0.55 }),
+    // plata pulida: algo de rugosidad para que refleje la sala clara y no se vea negra
+    silver: std({ color: 0xf1f2f5, metalness: 0.85, roughness: 0.24, envMap: env, envMapIntensity: 2.4 }),
+    clay: std({ color: 0xc2623a, roughness: 0.95 }),
+    porcelain: std({ color: 0xf4f1ea, roughness: 0.2, envMap: env, envMapIntensity: 0.8 }),
+  }),
+  build(lib) {
+    const fx = lib.fx;
+    floor(lib, std({ map: tex(concreteCanvas({ base: '#2c4a36', seed: 5 }), [8, 6]), roughness: 0.95 }), { toWindow: true });
+    walls(lib, std({ color: 0xece6d8, roughness: 0.8 }), { back: false });
+    ceiling(lib, 0xf0ebe0);
+    const view = tierraBackdrop(110, 40);
+    view.mesh.position.set(0, 13.4, BC.z - 30);
+    lib.room.add(view.mesh);
+    fx.view = view.uniforms;
+    // balcón del palco con su baranda baja, y la cancha de arcilla abajo
+    const balcony = plane(18, 0.8, std({ color: 0xe4ded0, roughness: 0.8 }));
+    balcony.rotation.x = -Math.PI / 2;
+    balcony.position.set(0, 0, BC.z - 1.2);
+    const parapet = new THREE.Mesh(new THREE.BoxGeometry(18, 0.5, 0.15), std({ color: 0xf1ede2, roughness: 0.7 }));
+    parapet.position.set(0, 0.25, BC.z - 1.6);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(18, 0.05, 0.18), lib.mat.woodDark);
+    rail.position.set(0, 0.52, BC.z - 1.6);
+    lib.room.add(balcony, parapet, rail);
+    const court = plane(44, 22.6, std({ map: tex(clayCourtCanvas()), roughness: 0.95 }));
+    court.rotation.x = -Math.PI / 2;
+    court.position.set(0, -1.0, BC.z - 1.6 - 11.3);
+    court.receiveShadow = true;
+    lib.room.add(court);
+    const courtZ = BC.z - 1.6 - 22.6 + 9.585; // centro de la cancha
+    const net = plane(12.8, 0.95, std({ map: tex(netCanvas(), [1, 1]), transparent: true, side: THREE.DoubleSide, roughness: 0.8 }));
+    net.rotation.y = Math.PI / 2;
+    net.position.set(0, -1.0 + 0.475, courtZ);
+    const postGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.07, 12);
+    for (const s of [-1, 1]) {
+      const post = new THREE.Mesh(postGeo, lib.mat.woodDark);
+      post.position.set(0, -1.0 + 0.535, courtZ + s * 6.4);
+      lib.room.add(post);
+    }
+    lib.room.add(net);
+    windowFrame(lib, std({ color: 0xf3efe6, roughness: 0.4 }), { step: 2.4, thick: 0.06, z: BC.z - 0.8 });
+    mainCase(lib, { back: false });
+    // a los costados: copa grande en su vitrina y un canasto de pelotas
+    const bigCup = buildSilverCup(lib.mat, 1968, [], 2.6);
+    bigCup.position.set(-3.1, 0.62, FRONT_Z + 0.4);
+    const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.62), lib.mat.panel);
+    pedestal.position.set(-3.1, 0.31, FRONT_Z + 0.4);
+    const vitrine = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.15, 0.6), new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, roughness: 0.02, envMap: lib.env, envMapIntensity: 1 }));
+    vitrine.position.set(-3.1, 0.62 + 0.575, FRONT_Z + 0.4);
+    lib.room.add(pedestal, bigCup, vitrine);
+    const basket = new THREE.Group();
+    const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.22, 0.6, 20, 4, true), new THREE.MeshStandardMaterial({ color: 0x2a2a2a, wireframe: true }));
+    wire.position.y = 0.55;
+    const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), lib.mat.woodDark);
+    legs.position.y = 0.25;
+    basket.add(wire, legs);
+    const ballMat = std({ color: 0xd7e43a, roughness: 0.95 });
+    const ballGeo = new THREE.SphereGeometry(0.034, 12, 10);
+    const rnd = Math.random;
+    for (let i = 0; i < 70; i++) {
+      const a = rnd() * Math.PI * 2, r = rnd() * 0.2, y = 0.3 + rnd() * 0.55;
+      const b = new THREE.Mesh(ballGeo, ballMat);
+      b.position.set(Math.cos(a) * r, Math.min(y, 0.82 - r * 0.3), Math.sin(a) * r);
+      basket.add(b);
+    }
+    basket.position.set(3.05, 0, FRONT_Z + 0.45);
+    lib.room.add(basket);
+    // cuidador pasando la alfombra por la arcilla, de punta a punta
+    const keeper = new THREE.Group();
+    const shirt = std({ color: 0x1d5236, roughness: 0.8 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.62, 0.26), shirt);
+    body.position.y = 1.15;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), std({ color: 0xc89878, roughness: 0.8 }));
+    head.position.y = 1.6;
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.125, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), std({ color: 0xf2efe6 }));
+    cap.position.y = 1.63;
+    const legsK = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.85, 0.22), std({ color: 0xece6d8, roughness: 0.8 }));
+    legsK.position.y = 0.42;
+    const mat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 2.4), std({ color: 0x3a3a34, roughness: 0.9 }));
+    mat.position.set(-2.2, 0.02, 0);
+    const rope = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.02, 0.02), std({ color: 0xd8d2c0 }));
+    rope.position.set(-0.8, 0.85, 0);
+    rope.rotation.z = 0.45;
+    keeper.add(body, head, cap, legsK, mat, rope);
+    keeper.position.set(-16, -1.0, courtZ + 2);
+    lib.room.add(keeper);
+    fx.keeper = keeper;
+    fx.keeperZ = courtZ;
+    // aspersores en las cuatro esquinas de la cancha
+    const n = 4 * 70;
+    const pos = new Float32Array(n * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const spray = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xdfefff, size: 0.09, transparent: true, opacity: 0.65, depthWrite: false }));
+    spray.visible = false;
+    lib.room.add(spray);
+    fx.spray = spray;
+    fx.sprinklers = [[-13.5, courtZ - 6.5], [13.5, courtZ - 6.5], [-13.5, courtZ + 6.5], [13.5, courtZ + 6.5]];
+    fx.nextSpray = null;
+    // luz de tarde
+    lib.room.add(new THREE.HemisphereLight(0xeaf2ff, 0x5c4a3a, 1.0), new THREE.AmbientLight(0xffffff, 0.18));
+    keyLight(lib, 0xfff4e6, 22);
+    baySpots(lib, 0xffe9cc, 2.5);
+    const sun = new THREE.DirectionalLight(0xfff0d6, 1.6);
+    sun.position.set(8, 14, -26);
+    sun.target.position.set(0, -1, courtZ);
+    lib.room.add(sun, sun.target);
+  },
+  tick(lib, t) {
+    const fx = lib.fx;
+    fx.view.uTime.value = t;
+    // el cuidador va y viene por la cancha (ida y vuelta en ~80 s), corriéndose de carril
+    const lap = (t * 0.025) % 2;
+    const dir = lap < 1 ? 1 : -1;
+    const k = lap < 1 ? lap : 2 - lap;
+    fx.keeper.position.x = -15 + k * 30;
+    fx.keeper.position.z = fx.keeperZ + (Math.floor(t * 0.0125) % 3) * 3 - 3;
+    fx.keeper.rotation.y = dir > 0 ? 0 : Math.PI;
+    // riego: cada 50 s, durante 9 s, cuatro chorros en arco sobre la arcilla
+    fx.nextSpray ??= t + 12;
+    if (t > fx.nextSpray) {
+      fx.sprayStart = t;
+      fx.nextSpray = t + 50;
+      lib.handlers.onSprinkler?.(9);
+    }
+    const s = t - (fx.sprayStart ?? -99);
+    fx.spray.visible = s >= 0 && s < 9;
+    if (fx.spray.visible) {
+      const pos = fx.spray.geometry.attributes.position;
+      fx.sprinklers.forEach(([sx, sz], j) => {
+        const aim = Math.atan2(fx.keeperZ - sz, -sx) + Math.sin(t * 0.9 + j) * 0.6;
+        for (let i = 0; i < 70; i++) {
+          const life = ((i / 70) + t * 0.9) % 1;
+          const d = life * 7;
+          const idx = (j * 70 + i) * 3;
+          pos.array[idx] = sx + Math.cos(aim) * d;
+          pos.array[idx + 1] = -1.0 + 0.3 + life * 2.6 - life * life * 2.9;
+          pos.array[idx + 2] = sz + Math.sin(aim) * d;
+        }
+      });
+      pos.needsUpdate = true;
+    }
   },
 };
 
