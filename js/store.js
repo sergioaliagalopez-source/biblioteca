@@ -9,10 +9,10 @@ import { prefs } from './db.js';
 // Datos de tu tienda en Lemon Squeezy. Completar cuando estén creados los productos
 // (ver LEEME.md, «Cobrar los fondos»). Mientras falten, el botón «Comprar» avisa que aún no está listo.
 export const PAYMENTS = {
-  storeId: null, // número de la tienda (Settings → Stores)
+  storeId: 507151, // número de la tienda (Settings → Stores)
   products: {
-    paddock: { checkout: '', productId: null },
-    tierra: { checkout: '', productId: null },
+    paddock: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/31df33b6-f676-439c-93ec-30c92124f8e0', productId: 1472475 },
+    tierra: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/5104ab33-a7f4-47f6-ade3-1d33459e4843', productId: 1472501 },
   },
 };
 
