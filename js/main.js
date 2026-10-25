@@ -1010,7 +1010,16 @@ function toast(text, ms = 2600) {
 // Hace la app instalable y usable sin internet (sólo cuando se sirve por http/https).
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
-  navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Sin modo sin conexión:', err));
+  // Si se publicó una versión nueva mientras la app estaba abierta, se recarga una vez para usarla
+  // entera (salvo que estés leyendo: se aplicará la próxima vez que la abras).
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading || state.reading) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch((err) => console.warn('Sin modo sin conexión:', err));
 }
 
 // ---------- Fondos ----------

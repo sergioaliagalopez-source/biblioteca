@@ -1,6 +1,8 @@
 // Service worker: guarda la app en el dispositivo para que abra sin internet.
-// Al publicar una versión nueva, sube el número de VERSION para que los teléfonos la descarguen.
-const VERSION = 'biblioteca-v3';
+// Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
+// viejos con nuevos); sin conexión usa la copia guardada.
+// Al publicar una versión nueva, sube el número de VERSION.
+const VERSION = 'biblioteca-v4';
 
 const SHELL = [
   './',
@@ -36,7 +38,9 @@ const SHELL = [
 const RUNTIME_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' evita guardar copias viejas que el navegador tenga de antes.
+  const fresh = SHELL.map((u) => new Request(u, { cache: 'reload' }));
+  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(fresh)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -53,32 +57,21 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // La página: primero la red (para recibir actualizaciones), y si no hay conexión, la guardada.
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put('index.html', copy));
-          return res;
-        })
-        .catch(() => caches.match('index.html'))
-    );
-    return;
-  }
-
-  // Archivos de la app: lo guardado al instante y, por detrás, se actualiza para la próxima vez.
+  // La página y los archivos de la app: primero la red (revalidando), y si no hay conexión, lo guardado.
   if (url.origin === self.location.origin) {
+    const nav = req.mode === 'navigate';
+    const key = nav ? 'index.html' : req;
+    // Una petición de navegación no se puede copiar con opciones: se arma una nueva con su URL.
+    const netReq = nav ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : new Request(req, { cache: 'no-cache' });
     event.respondWith(
       caches.open(VERSION).then(async (cache) => {
-        const cached = await cache.match(req, { ignoreSearch: true });
-        const fresh = fetch(req)
-          .then((res) => {
-            if (res.ok) cache.put(req, res.clone());
-            return res;
-          })
-          .catch(() => cached);
-        return cached || fresh;
+        try {
+          const res = await fetch(netReq);
+          if (res.ok) cache.put(key, res.clone());
+          return res;
+        } catch {
+          return (await cache.match(key, { ignoreSearch: true })) || Response.error();
+        }
       })
     );
     return;

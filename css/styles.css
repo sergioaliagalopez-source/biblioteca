@@ -724,12 +724,10 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 .hl-apply i { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
 #reader { -webkit-touch-callout: none; }
 
-#addBook .short { display: none; }
-
 /* Teléfonos: barras del lector más compactas para que entren en el ancho de la pantalla */
 @media (max-width: 480px) {
-  #addBook .long, .brand-name { display: none; }
-  #addBook .short { display: inline; }
+  .brand-name { display: none; }
+  .theme-cards { grid-template-columns: repeat(4, 78%); }
   .reader-bar, .hl-bar { max-width: calc(100vw - 12px); padding: 4px 6px; gap: 2px; }
   .r-btn { min-width: 32px; height: 34px; padding: 0 4px; }
   .r-btn.text { padding: 0 8px; }
@@ -770,7 +768,7 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
   .hint { display: none; }
   .cloud-btn span { display: none; }
   #search { padding-top: 70px; }
-  .theme-cards { grid-template-columns: repeat(4, 78%); }
+  .theme-cards { grid-template-columns: repeat(4, 44%); }
   .sheet { padding: 18px 16px max(20px, env(safe-area-inset-bottom)); }
   .theme-btn span { max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hl-hint { display: none; }

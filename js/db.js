@@ -54,11 +54,35 @@ async function run(store, mode, fn, fallback) {
   });
 }
 
+// Safari (en modo privado y algunas versiones de iPhone) no deja guardar archivos (Blob) en
+// IndexedDB, pero sí sus bytes: los PDF y portadas se guardan como ArrayBuffer y se rearman al leer.
+const BLOB_FIELDS = ['blob', 'coverBlob'];
+
+async function pack(value) {
+  if (!value || !BLOB_FIELDS.some((k) => value[k] instanceof Blob)) return value;
+  const out = { ...value };
+  for (const k of BLOB_FIELDS) {
+    if (out[k] instanceof Blob) out[k] = { __bytes: await out[k].arrayBuffer(), type: out[k].type };
+  }
+  return out;
+}
+
+function unpack(value) {
+  if (!value) return value;
+  for (const k of BLOB_FIELDS) {
+    if (value[k]?.__bytes) value[k] = new Blob([value[k].__bytes], { type: value[k].type });
+  }
+  return value;
+}
+
 // Base local del navegador. `db` (abajo) la usa salvo que haya una carpeta conectada.
 export const local = {
-  all: (store) => run(store, 'readonly', (s) => s.getAll(), (m) => [...m.values()]),
-  get: (store, id) => run(store, 'readonly', (s) => s.get(id), (m) => m.get(id)),
-  put: (store, value) => run(store, 'readwrite', (s) => s.put(value), (m) => void m.set(value.id, value)),
+  all: async (store) => (await run(store, 'readonly', (s) => s.getAll(), (m) => [...m.values()])).map(unpack),
+  get: async (store, id) => unpack(await run(store, 'readonly', (s) => s.get(id), (m) => m.get(id))),
+  put: async (store, value) => {
+    const packed = await pack(value);
+    return run(store, 'readwrite', (s) => s.put(packed), (m) => void m.set(value.id, value));
+  },
   del: (store, id) => run(store, 'readwrite', (s) => s.delete(id), (m) => void m.delete(id)),
 };
 
