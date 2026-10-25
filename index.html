@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Biblioteca</title>
+  <meta name="theme-color" content="#0b0806">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Biblioteca">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three.module.js",
+      "three/addons/environments/RoomEnvironment.js": "./vendor/RoomEnvironment.js",
+      "pdfjs-dist": "./vendor/pdf.min.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="loader">
+    <div class="ornament">❦</div>
+    <p>Encendiendo las lámparas…</p>
+    <div class="loader-actions" id="loaderActions" hidden>
+      <button class="btn-gold" id="reconnectBtn">Abrir mi biblioteca</button>
+      <button class="link-light" id="skipReconnect">Seguir sin conectar</button>
+    </div>
+  </div>
+
+  <header id="topbar">
+    <div class="brand"><span class="monogram">B</span><span class="brand-name">Biblioteca</span></div>
+    <nav id="tabs" class="tabs" aria-label="Categorías"></nav>
+    <div class="top-actions">
+      <button class="icon-btn" id="searchBtn" title="Buscar un libro (Ctrl+K)" aria-label="Buscar un libro">
+        <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+      </button>
+      <button class="cloud-btn" id="cloudBtn" hidden></button>
+      <button class="btn-gold" id="addBook">Añadir libro</button>
+    </div>
+  </header>
+
+  <div id="empty">
+    <div class="ornament">❦</div>
+    <p id="emptyText">Tu biblioteca espera su primer libro.</p>
+    <button class="btn-gold" id="emptyAdd">Elegir un PDF</button>
+    <small>o arrastra el archivo a cualquier parte de la ventana</small>
+  </div>
+
+  <footer id="footbar">
+    <span class="hint">Rueda del ratón para acercarte · Clic en un libro para leerlo · Clic derecho para más opciones</span>
+    <nav class="bay-dots" id="bayDots" aria-label="Tramos de la estantería"></nav>
+    <button class="ambient-btn" id="ambientBtn" title="Ambiente sonoro"></button>
+  </footer>
+
+  <div id="search" hidden>
+    <div class="search-panel" role="dialog" aria-label="Buscar un libro">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+        <input id="searchInput" type="text" placeholder="Buscar por título, autor o categoría…" autocomplete="off" spellcheck="false">
+        <kbd>Esc</kbd>
+      </div>
+      <div id="searchResults"></div>
+    </div>
+  </div>
+
+  <div id="tooltip"></div>
+  <div id="ctxmenu"></div>
+
+  <section id="reader" class="ui-hidden" aria-label="Lector">
+    <div class="reader-desk"></div>
+    <div class="reader-glow"></div>
+    <div class="reader-top">
+      <button class="r-btn text" id="rBack" title="Volver a la biblioteca (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg><span>Biblioteca</span>
+      </button>
+      <div class="r-title"><span id="rTitle"></span><em id="rAuthor"></em></div>
+      <button class="r-btn text" id="rInfo" title="Detalles del libro">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span>Detalles</span>
+      </button>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="book-wrap">
+        <div class="book3d closed" id="book3d">
+          <div class="book-shadow"></div>
+          <div class="board left"></div>
+          <div class="board right"></div>
+          <div class="spine-groove"></div>
+          <div class="edges left"></div>
+          <div class="edges right"></div>
+          <div class="page as-left" id="pageL"><div class="content"></div><div class="gutter"></div><div class="cast"></div></div>
+          <div class="page as-right" id="pageR"><div class="content"></div><div class="gutter"></div><div class="cast"></div></div>
+          <div class="leaf" id="leaf">
+            <div class="face front page as-right" id="leafFront"><div class="content"></div><div class="gutter"></div><div class="shade"></div></div>
+            <div class="face back page as-left" id="leafBack"><div class="content"></div><div class="gutter"></div><div class="shade"></div></div>
+          </div>
+          <div class="ribbon" id="ribbon"><div class="body"></div></div>
+          <button class="ribbon-tail" id="ribbonTail" aria-label="Cinta marcapáginas"></button>
+          <div class="spine-face" id="spineFace"><span id="spineTitle"></span></div>
+          <div class="tail-edge"></div>
+          <div class="cover" id="cover">
+            <div class="outside"><div class="cover-fallback" id="coverFallback"></div></div>
+            <div class="inside"><div class="page as-left" id="coverPage"><div class="content"></div><div class="gutter"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reader-bar" id="readerBar">
+      <button class="r-btn" id="rPrev" title="Página anterior (←)"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="r-pages">
+        <span>Pág.</span>
+        <input id="rPageInput" type="number" min="1" inputmode="numeric" aria-label="Ir a la página">
+        <span id="rPageTotal"></span>
+      </div>
+      <input type="range" id="rScrub" min="1" value="1" aria-label="Avanzar por el libro">
+      <button class="r-btn" id="rNext" title="Página siguiente (→)"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+      <span class="sep"></span>
+      <button class="r-btn text ribbon-btn" id="rRibbon" title="Poner o quitar la cinta en esta página (B)">
+        <svg viewBox="0 0 24 24"><path d="M7 3h10v18l-5-4-5 4z"/></svg><span>Cinta</span>
+      </button>
+      <button class="r-btn text hl-btn" id="rHighlight" title="Resaltar texto (H)">
+        <svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5z"/><path d="M4 21h16"/></svg><span>Resaltar</span>
+      </button>
+      <span class="sep"></span>
+      <button class="r-btn" id="rZoomOut" title="Alejar (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button class="r-btn" id="rZoomIn" title="Acercar (+)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
+      <button class="r-btn text" id="rMode" title="Cambiar entre una y dos páginas"></button>
+      <button class="r-btn text" id="rSound" title="Ambiente sonoro"></button>
+    </div>
+    <div class="hl-bar" id="hlBar">
+      <span class="hl-hint">Selecciona el texto para resaltarlo</span>
+      <button class="hl-dot" data-color="yellow" title="Amarillo" style="--c:#f2cf55"></button>
+      <button class="hl-dot" data-color="green" title="Verde" style="--c:#93cf8b"></button>
+      <button class="hl-dot" data-color="pink" title="Rosa" style="--c:#f19ab5"></button>
+      <button class="hl-dot" data-color="blue" title="Azul" style="--c:#8dbbea"></button>
+      <button class="hl-dot" data-color="orange" title="Naranja" style="--c:#f2aa62"></button>
+      <span class="sep"></span>
+      <button class="r-btn text" id="hlList" title="Ver todos los resaltados de este libro">Mis resaltados <b id="hlCount"></b></button>
+      <button class="r-btn text" id="hlDone" title="Terminar de resaltar (Esc)">Listo</button>
+    </div>
+    <button class="hl-apply" id="hlApply" hidden><i></i>Resaltar</button>
+    <div class="hl-pop" id="hlPop" hidden>
+      <button class="hl-dot" data-color="yellow" title="Amarillo" style="--c:#f2cf55"></button>
+      <button class="hl-dot" data-color="green" title="Verde" style="--c:#93cf8b"></button>
+      <button class="hl-dot" data-color="pink" title="Rosa" style="--c:#f19ab5"></button>
+      <button class="hl-dot" data-color="blue" title="Azul" style="--c:#8dbbea"></button>
+      <button class="hl-dot" data-color="orange" title="Naranja" style="--c:#f2aa62"></button>
+      <span class="sep"></span>
+      <button class="r-btn text" data-act="del" title="Quitar este resaltado">Quitar</button>
+    </div>
+  </section>
+
+  <div id="dropzone"><div><div class="ornament">❦</div>Suelta aquí tus libros en PDF</div></div>
+  <div id="modal-root"></div>
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+
+  <script>
+    // Si las librerías 3D/PDF no llegan a cargar (sin internet o un bloqueador), avisa en vez de quedarse esperando.
+    setTimeout(function () {
+      var loader = document.getElementById('loader');
+      if (loader.classList.contains('done') || loader.classList.contains('asking') || loader.querySelector('.boot-error')) return;
+      loader.querySelector('p').textContent = 'La biblioteca está tardando en cargar. Revisa tu conexión a internet o desactiva el bloqueador de anuncios para esta página, y recarga.';
+    }, 20000);
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
