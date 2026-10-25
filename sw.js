@@ -1,6 +1,6 @@
 // Service worker: guarda la app en el dispositivo para que abra sin internet.
 // Al publicar una versión nueva, sube el número de VERSION para que los teléfonos la descarguen.
-const VERSION = 'biblioteca-v2';
+const VERSION = 'biblioteca-v3';
 
 const SHELL = [
   './',
@@ -16,6 +16,9 @@ const SHELL = [
   'js/identify.js',
   'js/sound.js',
   'js/textures.js',
+  'js/themes.js',
+  'js/scenes.js',
+  'js/backdrops.js',
   'vendor/three.module.js',
   'vendor/RoomEnvironment.js',
   'vendor/pdf.min.mjs',
@@ -23,6 +26,10 @@ const SHELL = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',
+  'themes/clasica.jpg',
+  'themes/mansion.jpg',
+  'themes/jazz.jpg',
+  'themes/atico.jpg',
 ];
 
 // Recursos de otros sitios que conviene guardar al usarse: fuentes y tablas de PDF.js.

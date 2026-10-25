@@ -45,8 +45,9 @@
       <button class="icon-btn" id="searchBtn" title="Buscar un libro (Ctrl+K)" aria-label="Buscar un libro">
         <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
       </button>
+      <button class="icon-btn" id="soundBtn" title="Sonido" aria-label="Ajustes de sonido"></button>
       <button class="cloud-btn" id="cloudBtn" hidden></button>
-      <button class="btn-gold" id="addBook">Añadir libro</button>
+      <button class="btn-gold" id="addBook"><span class="long">Añadir libro</span><span class="short">+ Libro</span></button>
     </div>
   </header>
 
@@ -61,7 +62,7 @@
     <span class="hint hint-mouse">Rueda del ratón para acercarte · Clic en un libro para leerlo · Clic derecho para más opciones</span>
     <span class="hint hint-touch">Toca un libro para leerlo · Mantenlo apretado para más opciones</span>
     <nav class="bay-dots" id="bayDots" aria-label="Tramos de la estantería"></nav>
-    <button class="ambient-btn" id="ambientBtn" title="Ambiente sonoro"></button>
+    <button class="theme-btn" id="themeBtn" title="Cambiar el fondo"></button>
   </footer>
 
   <div id="search" hidden>
@@ -74,6 +75,29 @@
       <div id="searchResults"></div>
     </div>
   </div>
+
+  <div id="themes" class="sheet-backdrop" hidden>
+    <section class="sheet" role="dialog" aria-label="Fondos">
+      <header class="sheet-head">
+        <div>
+          <h3>Fondos</h3>
+          <p>Elige dónde quieres leer hoy</p>
+        </div>
+        <button class="icon-btn" data-close aria-label="Cerrar">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="theme-cards" id="themeCards"></div>
+    </section>
+  </div>
+
+  <div id="curtain" aria-hidden="true">
+    <div class="ornament">❦</div>
+    <h2></h2>
+    <p></p>
+  </div>
+
+  <div id="soundPanel" class="sound-panel" hidden></div>
 
   <div id="tooltip"></div>
   <div id="ctxmenu"></div>
@@ -138,7 +162,7 @@
       <button class="r-btn" id="rZoomOut" title="Alejar (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
       <button class="r-btn" id="rZoomIn" title="Acercar (+)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
       <button class="r-btn text" id="rMode" title="Cambiar entre una y dos páginas"></button>
-      <button class="r-btn text" id="rSound" title="Ambiente sonoro"></button>
+      <button class="r-btn" id="rSound" title="Sonido" aria-label="Ajustes de sonido"></button>
     </div>
     <div class="hl-bar" id="hlBar">
       <span class="hl-hint">Selecciona el texto para resaltarlo</span>

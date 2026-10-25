@@ -1,10 +1,21 @@
-// Sonidos sintetizados con Web Audio (sin archivos): hoja que pasa, "ping" de la cinta
-// y ambientes tranquilos (lluvia en la ventana o chimenea).
+// Sonidos sintetizados con Web Audio (sin archivos): hoja que pasa, "ping" de la cinta y los
+// ambientes de cada fondo (chimenea, olas del mar, jazz suave, lluvia y piano en la ciudad).
+// Tres volúmenes: general, ambiente y efectos (hojas y cinta).
+import { prefs } from './db.js';
 
 let ctx = null;
 let master = null;
+let ambBus = null;
+let fxBus = null;
+let reverb = null;
 const buffers = {};
-const ambient = { mode: 'off', nodes: [], timer: null };
+const current = { mode: 'off', stop: null };
+
+const readVol = (key, def) => {
+  const v = parseFloat(prefs.get(`bib.vol.${key}`));
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : def;
+};
+const volume = { master: readVol('master', 0.8), ambient: readVol('ambient', 0.7), fx: readVol('fx', 0.8) };
 
 function audio() {
   if (!ctx) {
@@ -12,8 +23,14 @@ function audio() {
     if (!AC) return null;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.8;
+    master.gain.value = volume.master;
     master.connect(ctx.destination);
+    ambBus = ctx.createGain();
+    ambBus.gain.value = volume.ambient;
+    ambBus.connect(master);
+    fxBus = ctx.createGain();
+    fxBus.gain.value = volume.fx;
+    fxBus.connect(master);
   }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
@@ -43,7 +60,28 @@ function noise(type, seconds) {
   return buf;
 }
 
-function loop(type, filters, gain) {
+// Reverberación de sala (respuesta al impulso inventada: ruido que se apaga).
+function room() {
+  if (reverb) return reverb;
+  const c = audio();
+  const len = Math.floor(c.sampleRate * 2.2);
+  const ir = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  const conv = c.createConvolver();
+  conv.buffer = ir;
+  const wet = c.createGain();
+  wet.gain.value = 0.28;
+  conv.connect(wet).connect(ambBus);
+  reverb = conv;
+  return reverb;
+}
+
+const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+
+function noiseLoop(out, type, filters, gain) {
   const c = audio();
   const src = c.createBufferSource();
   src.buffer = noise(type, 4);
@@ -58,29 +96,319 @@ function loop(type, filters, gain) {
     node = bq;
   }
   const g = c.createGain();
-  g.gain.setValueAtTime(0.0001, c.currentTime);
-  g.gain.exponentialRampToValueAtTime(gain, c.currentTime + 2.5);
-  node.connect(g).connect(master);
+  g.gain.value = gain;
+  node.connect(g).connect(out);
   src.start();
-  return { src, g };
+  return { src, g, stop: (t) => src.stop(t) };
 }
 
-function crackle() {
+function burst(out, { at, dur, type = 'white', filter = 'highpass', freq = 2000, q = 0.7, peak = 0.1, attack = 0.003 }) {
   const c = audio();
-  const t = c.currentTime;
   const src = c.createBufferSource();
-  src.buffer = noise('white', 0.1);
-  const hp = c.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 900 + Math.random() * 2500;
+  src.buffer = noise(type, 1);
+  const f = c.createBiquadFilter();
+  f.type = filter;
+  f.frequency.value = freq;
+  f.Q.value = q;
   const g = c.createGain();
-  const peak = 0.03 + Math.random() * 0.16;
-  g.gain.setValueAtTime(peak, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.015 + Math.random() * 0.05);
-  src.connect(hp).connect(g).connect(master);
-  src.start(t);
-  src.stop(t + 0.1);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(peak, at + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  src.connect(f).connect(g).connect(out);
+  src.start(at, Math.random() * 0.5);
+  src.stop(at + dur + 0.05);
 }
+
+// Programa eventos un poco por adelantado (para que el ritmo no tiemble aunque la página esté ocupada).
+function scheduler(tick) {
+  const id = setInterval(() => tick(audio().currentTime + 0.35), 40);
+  return () => clearInterval(id);
+}
+
+// ---------- Ambientes ----------
+
+const GENERATORS = {
+  rain(out) {
+    const a = noiseLoop(out, 'pink', [{ type: 'highpass', freq: 500 }, { type: 'lowpass', freq: 5200 }], 0.2);
+    const b = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 300 }], 0.12);
+    return (t) => [a, b].forEach((n) => n.stop(t));
+  },
+
+  fire(out) {
+    const base = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 520 }], 0.4);
+    let alive = true;
+    let timer;
+    const tick = () => {
+      if (!alive) return;
+      const c = audio();
+      burst(out, { at: c.currentTime, dur: 0.02 + Math.random() * 0.05, freq: 900 + Math.random() * 2500, peak: 0.03 + Math.random() * 0.16 });
+      if (Math.random() < 0.3) burst(out, { at: c.currentTime + 0.05, dur: 0.03, freq: 1800, peak: 0.06 });
+      timer = setTimeout(tick, 60 + Math.random() * 520);
+    };
+    tick();
+    return (t) => {
+      alive = false;
+      clearTimeout(timer);
+      base.stop(t);
+    };
+  },
+
+  // Olas que llegan y se retiran, mar de fondo y alguna gaviota lejos.
+  ocean(out) {
+    const c = audio();
+    const rumble = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 220 }], 0.16);
+    const src = c.createBufferSource();
+    src.buffer = noise('pink', 4);
+    src.loop = true;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 400;
+    const wave = c.createGain();
+    wave.gain.value = 0.05;
+    src.connect(lp).connect(wave).connect(out);
+    src.start();
+    let alive = true;
+    let waveTimer, gullTimer;
+    const nextWave = () => {
+      if (!alive) return;
+      const t = c.currentTime + 0.05;
+      const period = 6 + Math.random() * 4;
+      const peak = 0.35 + Math.random() * 0.25;
+      wave.gain.cancelScheduledValues(t);
+      wave.gain.setValueAtTime(wave.gain.value, t);
+      wave.gain.linearRampToValueAtTime(peak, t + period * 0.35);
+      wave.gain.linearRampToValueAtTime(0.06, t + period);
+      lp.frequency.cancelScheduledValues(t);
+      lp.frequency.setValueAtTime(lp.frequency.value, t);
+      lp.frequency.exponentialRampToValueAtTime(1500 + Math.random() * 600, t + period * 0.4);
+      lp.frequency.exponentialRampToValueAtTime(380, t + period);
+      waveTimer = setTimeout(nextWave, period * 1000);
+    };
+    const gull = () => {
+      if (!alive) return;
+      const n = 2 + Math.floor(Math.random() * 2);
+      const pan = c.createStereoPanner();
+      pan.pan.value = Math.random() * 1.6 - 0.8;
+      pan.connect(out);
+      for (let i = 0; i < n; i++) {
+        const at = c.currentTime + i * 0.38;
+        const o = c.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(2300, at);
+        o.frequency.exponentialRampToValueAtTime(1350, at + 0.28);
+        const vib = c.createOscillator();
+        vib.frequency.value = 28;
+        const vibG = c.createGain();
+        vibG.gain.value = 60;
+        vib.connect(vibG).connect(o.frequency);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.018, at + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.3);
+        o.connect(g).connect(pan);
+        o.start(at);
+        vib.start(at);
+        o.stop(at + 0.32);
+        vib.stop(at + 0.32);
+      }
+      gullTimer = setTimeout(gull, 15000 + Math.random() * 25000);
+    };
+    nextWave();
+    gullTimer = setTimeout(gull, 6000);
+    return (t) => {
+      alive = false;
+      clearTimeout(waveTimer);
+      clearTimeout(gullTimer);
+      rumble.stop(t);
+      src.stop(t);
+    };
+  },
+
+  // Trío de jazz suave: piano eléctrico, contrabajo caminando, platillo y escobillas, con crujido de vinilo.
+  jazz(out) {
+    const c = audio();
+    const verb = room();
+    const send = c.createGain();
+    send.gain.value = 0.5;
+    send.connect(verb);
+    const beat = 60 / 86;
+    // [raíz del bajo, tipo, voces del piano]
+    const BARS = [
+      [43, 'm', [58, 62, 65, 69]], // Gm9
+      [36, '7', [58, 64, 69, 74]], // C13
+      [41, 'M', [57, 60, 64, 67]], // Fmaj9
+      [38, '7', [60, 66, 69, 75]], // D7(b9)
+      [43, 'm', [58, 62, 65, 69]], // Gm9
+      [36, '7', [58, 64, 67, 72]], // C7
+      [45, 'm', [55, 60, 64, 69]], // Am7
+      [38, '7', [60, 66, 69, 72]], // D7
+    ];
+    const SHAPE = { m: [0, 3, 7, 10], 7: [0, 4, 7, 10], M: [0, 4, 7, 11] };
+    const COMP = [[1.67, 3], [0, 2.67], [1.67], [0.67, 2.67], [3], [1, 2.67]];
+    const RIDE = [[0, 0.03], [1, 0.045], [1.67, 0.025], [2, 0.03], [3, 0.045], [3.67, 0.025]];
+
+    const ep = (note, at, dur, vel) => {
+      const f = midi(note);
+      const car = c.createOscillator();
+      car.type = 'sine';
+      car.frequency.value = f;
+      const mod = c.createOscillator();
+      mod.frequency.value = f;
+      const modG = c.createGain();
+      modG.gain.setValueAtTime(f * 1.4, at);
+      modG.gain.exponentialRampToValueAtTime(f * 0.15, at + 0.7);
+      mod.connect(modG).connect(car.frequency);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(vel, at + 0.006);
+      g.gain.exponentialRampToValueAtTime(vel * 0.4, at + 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur + 0.4);
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2800;
+      car.connect(lp).connect(g);
+      g.connect(out);
+      g.connect(send);
+      car.start(at);
+      mod.start(at);
+      car.stop(at + dur + 0.5);
+      mod.stop(at + dur + 0.5);
+    };
+    const bass = (note, at, dur) => {
+      const o = c.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = midi(note);
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 700;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.28, at + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.12, at + 0.2);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.connect(lp).connect(g).connect(out);
+      o.start(at);
+      o.stop(at + dur + 0.05);
+    };
+
+    let bar = 0;
+    let barAt = c.currentTime + 0.3;
+    const stopSched = scheduler((until) => {
+      while (barAt < until) {
+        const [root, kind, voicing] = BARS[bar % BARS.length];
+        const nextRoot = BARS[(bar + 1) % BARS.length][0];
+        const shape = SHAPE[kind];
+        // contrabajo: tónica, notas del acorde y una nota de paso hacia el siguiente acorde
+        const walk = [root, root + shape[1 + Math.floor(Math.random() * 2)], root + (Math.random() < 0.5 ? 7 : 12), nextRoot + (Math.random() < 0.5 ? -1 : 1)];
+        walk.forEach((n, i) => bass(n, barAt + i * beat, beat * 0.95));
+        // piano: acordes en contratiempo, a veces una nota suelta arriba
+        for (const pos of COMP[Math.floor(Math.random() * COMP.length)]) {
+          const dur = beat * (0.6 + Math.random() * 0.9);
+          voicing.forEach((n, i) => ep(n, barAt + pos * beat + i * 0.008, dur, 0.035));
+        }
+        if (Math.random() < 0.35) ep(voicing[3] + 12, barAt + 2 * beat + beat * 0.67, beat * 0.8, 0.025);
+        // platillo ride, escobillas en 2 y 4
+        for (const [pos, v] of RIDE) burst(out, { at: barAt + pos * beat, dur: 0.35, filter: 'highpass', freq: 7000, peak: v });
+        for (const pos of [1, 3]) burst(out, { at: barAt + pos * beat, dur: 0.22, type: 'pink', filter: 'bandpass', freq: 2600, q: 0.6, peak: 0.05, attack: 0.025 });
+        barAt += 4 * beat;
+        bar++;
+      }
+    });
+    // crujido del vinilo
+    const hiss = noiseLoop(out, 'pink', [{ type: 'highpass', freq: 2500 }, { type: 'lowpass', freq: 7000 }], 0.012);
+    let alive = true;
+    let crackleTimer;
+    const crackle = () => {
+      if (!alive) return;
+      burst(out, { at: c.currentTime, dur: 0.008, freq: 3000, peak: 0.02 + Math.random() * 0.04 });
+      crackleTimer = setTimeout(crackle, 40 + Math.random() * 400);
+    };
+    crackle();
+    return (t) => {
+      alive = false;
+      stopSched();
+      clearTimeout(crackleTimer);
+      hiss.stop(t);
+    };
+  },
+
+  // Lluvia en el ventanal, acordes ambientales largos y notas sueltas de piano.
+  city(out) {
+    const c = audio();
+    const verb = room();
+    const send = c.createGain();
+    send.gain.value = 0.9;
+    send.connect(verb);
+    const r1 = noiseLoop(out, 'pink', [{ type: 'highpass', freq: 600 }, { type: 'lowpass', freq: 4800 }], 0.17);
+    const r2 = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 260 }], 0.1);
+    const CHORDS = [[48, 55, 59, 64], [45, 52, 59, 60], [41, 52, 57, 64], [43, 50, 59, 64]];
+    const pad = (notes, at, len) => {
+      for (const n of notes) {
+        for (const det of [-6, 6]) {
+          const o = c.createOscillator();
+          o.type = 'triangle';
+          o.frequency.value = midi(n);
+          o.detune.value = det;
+          const lp = c.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = 1100;
+          const g = c.createGain();
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.linearRampToValueAtTime(0.014, at + 3);
+          g.gain.setValueAtTime(0.014, at + len - 1);
+          g.gain.linearRampToValueAtTime(0.0001, at + len + 3);
+          o.connect(lp).connect(g);
+          g.connect(out);
+          g.connect(send);
+          o.start(at);
+          o.stop(at + len + 3.1);
+        }
+      }
+    };
+    const piano = (n, at) => {
+      const o = c.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = midi(n);
+      const o2 = c.createOscillator();
+      o2.type = 'sine';
+      o2.frequency.value = midi(n) * 2;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.05, at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 3);
+      const g2 = c.createGain();
+      g2.gain.value = 0.25;
+      o.connect(g);
+      o2.connect(g2).connect(g);
+      g.connect(out);
+      g.connect(send);
+      o.start(at);
+      o2.start(at);
+      o.stop(at + 3.1);
+      o2.stop(at + 3.1);
+    };
+    let i = 0;
+    let at = c.currentTime + 0.3;
+    let nextNote = at + 2;
+    const stopSched = scheduler((until) => {
+      while (at < until) {
+        pad(CHORDS[i % CHORDS.length], at, 8);
+        at += 8;
+        i++;
+      }
+      while (nextNote < until) {
+        const chord = CHORDS[(i - 1 + CHORDS.length) % CHORDS.length];
+        piano(chord[Math.floor(Math.random() * chord.length)] + 24, nextNote);
+        nextNote += 1.5 + Math.random() * 3.5;
+      }
+    });
+    return (t) => {
+      stopSched();
+      r1.stop(t);
+      r2.stop(t);
+    };
+  },
+};
 
 export const sound = {
   flip(heavy = false) {
@@ -100,7 +428,7 @@ export const sound = {
     g.gain.exponentialRampToValueAtTime(peak, t + 0.05);
     g.gain.exponentialRampToValueAtTime(peak * 0.25, t + 0.2);
     g.gain.exponentialRampToValueAtTime(0.0001, t + (heavy ? 0.6 : 0.45));
-    src.connect(bp).connect(g).connect(master);
+    src.connect(bp).connect(g).connect(fxBus);
     src.start(t);
     src.stop(t + 0.6);
   },
@@ -118,39 +446,68 @@ export const sound = {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(a, t + 0.008);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(master);
+      o.connect(g).connect(fxBus);
       o.start(t);
       o.stop(t + dur + 0.05);
     });
   },
 
-  get ambient() {
-    return ambient.mode;
+  // Trueno lejano (sólo suena si el ambiente es la lluvia de la ciudad).
+  thunder() {
+    if (current.mode !== 'city' || !ctx) return;
+    const c = audio();
+    const at = c.currentTime + 0.8 + Math.random() * 1.4;
+    const src = c.createBufferSource();
+    src.buffer = noise('brown', 4);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(320, at);
+    lp.frequency.exponentialRampToValueAtTime(90, at + 3.5);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.9, at + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.25, at + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 4);
+    src.connect(lp).connect(g).connect(ambBus);
+    src.start(at);
+    src.stop(at + 4.1);
   },
 
+  get ambient() {
+    return current.mode;
+  },
+
+  // Cambia el ambiente con un fundido cruzado suave.
   setAmbient(mode) {
     const c = audio();
-    if (!c) return;
-    ambient.nodes.forEach(({ src, g }) => {
-      g.gain.cancelScheduledValues(c.currentTime);
-      g.gain.setTargetAtTime(0.0001, c.currentTime, 0.4);
-      src.stop(c.currentTime + 2);
-    });
-    ambient.nodes = [];
-    clearTimeout(ambient.timer);
-    ambient.mode = mode;
-    if (mode === 'rain') {
-      ambient.nodes.push(loop('pink', [{ type: 'highpass', freq: 500 }, { type: 'lowpass', freq: 5200 }], 0.2));
-      ambient.nodes.push(loop('brown', [{ type: 'lowpass', freq: 300 }], 0.12));
-    } else if (mode === 'fire') {
-      ambient.nodes.push(loop('brown', [{ type: 'lowpass', freq: 520 }], 0.4));
-      const tick = () => {
-        if (ambient.mode !== 'fire') return;
-        crackle();
-        if (Math.random() < 0.3) setTimeout(crackle, 30 + Math.random() * 60);
-        ambient.timer = setTimeout(tick, 60 + Math.random() * 520);
-      };
-      tick();
+    if (!c || mode === current.mode) return;
+    const now = c.currentTime;
+    if (current.stop) {
+      const { stop, gain } = current;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0.0001, now + 1.6);
+      stop(now + 1.7);
+      setTimeout(() => gain.disconnect(), 1900);
     }
+    current.mode = mode;
+    current.stop = null;
+    const gen = GENERATORS[mode];
+    if (!gen) return;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(1, now + 2.5);
+    gain.connect(ambBus);
+    current.gain = gain;
+    current.stop = gen(gain);
+  },
+
+  getVolume: (kind) => volume[kind],
+
+  setVolume(kind, v) {
+    volume[kind] = Math.min(1, Math.max(0, v));
+    prefs.set(`bib.vol.${kind}`, String(volume[kind]));
+    const node = { master, ambient: ambBus, fx: fxBus }[kind];
+    if (node && ctx) node.gain.setTargetAtTime(volume[kind], ctx.currentTime, 0.05);
   },
 };

@@ -1,29 +1,13 @@
 // Escena 3D: una biblioteca de madera, cálida y silenciosa, con tus libros en la estantería central.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import {
-  woodCanvas, floorCanvas, wallCanvas, spineCanvas, plaqueCanvas, paperEdgeCanvas, decorSpineCanvas,
-  globeCanvas, paintingCanvas, dustSprite, seeded, hashStr, PALETTE, clamp,
-} from './textures.js';
+import { spineCanvas, plaqueCanvas, decorSpineCanvas, paintingCanvas, dustSprite, seeded, hashStr, PALETTE, clamp } from './textures.js';
+import { BC, FRONT_Z, tex, computeBays, SCENES, sceneMaterials, pagesMaterial } from './scenes.js';
 
-// Estantería principal (metros). Las filas indican la altura de cada balda.
-const BC = { w: 4.2, h: 3.04, d: 0.42, z: -1.8, rows: [0.72, 1.3, 1.88, 2.46], side: 0.06, shelfT: 0.035, divider: 0.035, base: 0.66 };
-const FRONT_Z = BC.z + BC.d / 2;
 const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
   inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
 };
-
-function tex(canvas, repeat) {
-  const t = new THREE.CanvasTexture(canvas);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  if (repeat) {
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeat[0], repeat[1]);
-  }
-  return t;
-}
 
 export class Library3D {
   constructor(canvas, handlers) {
@@ -62,14 +46,14 @@ export class Library3D {
     this.frozen = false;
 
     this.unitBox = new THREE.BoxGeometry(1, 1, 1);
-    this.buildMaterials();
-    this.buildRoom();
-    this.buildLights();
-    this.buildDust();
+    this.pagesMat = pagesMaterial();
+    this.decorTex = tex(decorSpineCanvas());
+    this.spinners = [];
 
     this.shelf = new THREE.Group();
     this.shelf.position.set(0, 0, BC.z);
     this.scene.add(this.shelf);
+    this.buildTheme(handlers.theme || 'clasica');
 
     this.bindEvents();
     this.resize();
@@ -77,75 +61,59 @@ export class Library3D {
     requestAnimationFrame(this.loop);
   }
 
-  // ---------- Materiales ----------
+  // ---------- Fondos (ambientes) ----------
 
-  buildMaterials() {
-    const env = this.env;
-    this.mat = {
-      wood: new THREE.MeshStandardMaterial({ map: tex(woodCanvas({ seed: 11 })), roughness: 0.48, envMap: env, envMapIntensity: 0.22 }),
-      woodDark: new THREE.MeshStandardMaterial({ map: tex(woodCanvas({ seed: 5, base: '#2a130b', dark: '#140804', light: '#3d1e10' })), roughness: 0.7 }),
-      panel: new THREE.MeshStandardMaterial({ map: tex(woodCanvas({ seed: 19, base: '#542a18', light: '#7c4126' })), roughness: 0.42, envMap: env, envMapIntensity: 0.3 }),
-      brass: new THREE.MeshStandardMaterial({ color: 0xc9a25a, metalness: 1, roughness: 0.3, envMap: env, envMapIntensity: 1.1 }),
-      pages: new THREE.MeshStandardMaterial({ map: tex(paperEdgeCanvas()), color: 0xf2e6cb, roughness: 0.9 }),
-      glow: new THREE.MeshStandardMaterial({ color: 0xffe2b0, emissive: 0xffc77a, emissiveIntensity: 2.4 }),
-      candle: new THREE.MeshStandardMaterial({ color: 0xf1e6cf, roughness: 0.6 }),
-      flame: new THREE.MeshBasicMaterial({ color: 0xffd28a }),
-      porcelain: new THREE.MeshStandardMaterial({ color: 0x1d3264, roughness: 0.18, envMap: env, envMapIntensity: 0.8 }),
-      globe: new THREE.MeshStandardMaterial({ map: tex(globeCanvas()), roughness: 0.55, envMap: env, envMapIntensity: 0.3 }),
-    };
-    this.decorTex = tex(decorSpineCanvas());
+  // Arma la sala del fondo elegido: materiales, muebles, paisaje, luces y partículas.
+  buildTheme(id) {
+    const def = SCENES[id] ? id : 'clasica';
+    this.themeId = def;
+    this.theme = SCENES[def];
+    this.fx = {};
+    this.room = new THREE.Group();
+    this.scene.add(this.room);
+    this.mat = sceneMaterials(def, this.env);
     // Los libros decorativos son algo más apagados para que los tuyos destaquen.
-    this.decorMats = PALETTE.map((c) => new THREE.MeshStandardMaterial({ color: new THREE.Color(c).multiplyScalar(0.7), map: this.decorTex, roughness: 0.8 }));
+    this.decorMats = this.theme.palette.map((c) => new THREE.MeshStandardMaterial({ color: new THREE.Color(c).multiplyScalar(this.theme.paletteGain), map: this.decorTex, roughness: 0.8 }));
+    this.scene.background = new THREE.Color(this.theme.background);
+    this.scene.fog = new THREE.Fog(...this.theme.fog);
+    this.renderer.toneMappingExposure = this.theme.exposure;
+    this.theme.build(this);
+    this.buildParticles(this.theme.particles);
   }
 
-  // ---------- Sala ----------
-
-  buildRoom() {
-    const s = this.scene;
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 12), new THREE.MeshStandardMaterial({ map: tex(floorCanvas(), [5, 4]), roughness: 0.45, envMap: this.env, envMapIntensity: 0.25 }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    s.add(floor);
-
-    const wallMat = new THREE.MeshStandardMaterial({ map: tex(wallCanvas(), [8, 2.4]), roughness: 0.9 });
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(16, 4.6), wallMat);
-    back.position.set(0, 2.3, BC.z - BC.d / 2 - 0.03);
-    s.add(back);
-    for (const sx of [-1, 1]) {
-      const side = new THREE.Mesh(new THREE.PlaneGeometry(12, 4.6), wallMat);
-      side.position.set(sx * 6.2, 2.3, 2);
-      side.rotation.y = -sx * Math.PI / 2;
-      s.add(side);
-    }
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(16, 12), new THREE.MeshStandardMaterial({ color: 0x120b07, roughness: 1 }));
-    ceil.rotation.x = Math.PI / 2;
-    ceil.position.set(0, 4.6, 2);
-    s.add(ceil);
-
-    // Estantería principal (sólo estructura; los libros llegan con setBooks).
-    const main = this.caseStructure(BC.w, true);
-    main.position.set(0, 0, BC.z);
-    s.add(main);
-    this.mainBays = main.userData.bays;
-
-    // Estanterías laterales llenas de libros antiguos.
-    for (const sx of [-1, 1]) {
-      const w = 3.2;
-      const side = this.caseStructure(w, false);
-      side.position.set(sx * (BC.w / 2 + 0.03 + w / 2), 0, BC.z);
-      this.fillDecorBooks(side, side.userData.bays, sx > 0 ? 101 : 202);
-      s.add(side);
-    }
-
-    // Barra de bronce para la escalera, a lo largo de las estanterías.
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 11, 12), this.mat.brass);
-    rail.rotation.z = Math.PI / 2;
-    rail.position.set(0, 2.98, FRONT_Z + 0.07);
-    s.add(rail);
-    this.buildLadder(-2.48);
+  // Cambia de fondo y vuelve a acomodar los libros en la nueva estantería.
+  setTheme(id) {
+    if (id === this.themeId || this.flying) return;
+    this.disposeTheme();
+    this.buildTheme(id);
+    if (this.last) this.setBooks(...this.last);
   }
 
-  caseStructure(w, isMain) {
+  disposeTheme() {
+    this.clearDynamic();
+    this.scene.remove(this.room);
+    const mats = new Set([...Object.values(this.mat), ...this.decorMats]);
+    if (this.plaqueMat) mats.add(this.plaqueMat);
+    const geos = new Set();
+    this.room.traverse((o) => {
+      if (o.geometry && o.geometry !== this.unitBox) geos.add(o.geometry);
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => mats.add(m));
+    });
+    geos.forEach((g) => g.dispose());
+    for (const m of mats) {
+      if (m.userData?.shared) continue;
+      for (const key of ['map', 'emissiveMap', 'roughnessMap']) if (m[key] && m[key] !== this.decorTex) m[key].dispose();
+      m.dispose();
+    }
+    this.room = null;
+  }
+
+  // Acerca la cámara desde un poco más lejos (al entrar a un fondo nuevo).
+  dollyIn() {
+    this.dist = this.maxDist * 1.35;
+  }
+
+  caseStructure(w, isMain, { back = true } = {}) {
     const g = new THREE.Group();
     const { h, d, side, shelfT, rows, divider, base } = BC;
     const box = (sx, sy, sz, x, y, z, m = this.mat.wood) => {
@@ -158,20 +126,18 @@ export class Library3D {
     };
     box(side, h, d, -w / 2 + side / 2, h / 2, 0);
     box(side, h, d, w / 2 - side / 2, h / 2, 0);
-    box(w, h, 0.02, 0, h / 2, -d / 2 + 0.01, this.mat.woodDark);
+    // Sin fondo, la estantería deja ver el ventanal de atrás (mansión).
+    if (back) box(w, h, 0.02, 0, h / 2, -d / 2 + 0.01, this.mat.woodDark);
     box(w, base, d, 0, base / 2, 0);
-    box(w + 0.04, 0.08, d + 0.04, 0, 0.04, 0.01, this.mat.woodDark);
+    box(w + 0.04, 0.08, d + 0.04, 0, 0.04, 0.01, back ? this.mat.woodDark : this.mat.panel);
     box(w, 0.04, d, 0, h - 0.02, 0);
     box(w + 0.12, 0.14, d + 0.06, 0, h + 0.07, 0.02);
     box(w + 0.2, 0.04, d + 0.1, 0, h + 0.16, 0.03);
 
-    const bays = Math.max(1, Math.round(w / 1.4));
     const innerW = w - 2 * side;
-    const bayW = (innerW - (bays - 1) * divider) / bays;
-    const bayList = [];
-    for (let i = 0; i < bays; i++) {
-      const x0 = -innerW / 2 + i * (bayW + divider);
-      bayList.push([x0, x0 + bayW]);
+    const bayList = computeBays(w);
+    for (const [i, [x0, x1]] of bayList.entries()) {
+      const bayW = x1 - x0;
       if (i > 0) box(divider, h - base, d - 0.02, x0 - divider / 2, base + (h - base) / 2, 0.005);
       // Puertas del mueble bajo, con pomo de bronce.
       const cx = x0 + bayW / 2;
@@ -211,7 +177,7 @@ export class Library3D {
     return g;
   }
 
-  fillDecorBooks(group, bays, seed) {
+  fillDecorBooks(group, bays, seed, palette = PALETTE) {
     const rnd = seeded(seed);
     const mat = new THREE.MeshStandardMaterial({ map: this.decorTex, roughness: 0.75 });
     const inst = new THREE.InstancedMesh(this.unitBox, mat, 600);
@@ -228,7 +194,7 @@ export class Library3D {
           s.set(t, hh, dd);
           m4.compose(p, q, s);
           inst.setMatrixAt(i, m4);
-          col.set(PALETTE[Math.floor(rnd() * PALETTE.length)]).multiplyScalar(0.55 + rnd() * 0.35);
+          col.set(palette[Math.floor(rnd() * palette.length)]).multiplyScalar(0.55 + rnd() * 0.35);
           inst.setColorAt(i, col);
           i++;
           x += t + 0.002;
@@ -270,42 +236,14 @@ export class Library3D {
       g.add(rung);
     }
     g.position.x = x;
-    this.scene.add(g);
+    this.room.add(g);
   }
 
-  buildLights() {
-    const s = this.scene;
-    s.add(new THREE.HemisphereLight(0xffe0b8, 0x1a0e07, 0.45));
-    s.add(new THREE.AmbientLight(0xffd7a8, 0.12));
-
-    const key = new THREE.SpotLight(0xffd29a, 34, 13, 0.62, 0.75, 1.6);
-    key.position.set(0.5, 3.9, 1.8);
-    key.target.position.set(0, 1.5, BC.z);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.bias = -0.0004;
-    key.shadow.normalBias = 0.02;
-    s.add(key, key.target);
-
-    for (const [a, b] of this.mainBays) {
-      const x = (a + b) / 2;
-      const spot = new THREE.SpotLight(0xffb870, 6, 4.5, 0.8, 0.9, 1.8);
-      spot.position.set(x, BC.h - 0.1, FRONT_Z + 0.3);
-      spot.target.position.set(x, 1.0, BC.z);
-      s.add(spot, spot.target);
-    }
-
-    this.fire = new THREE.PointLight(0xff7a2e, 6, 9, 1.6);
-    this.fire.position.set(-4.3, 0.7, 0.9);
-    s.add(this.fire);
-
-    const moon = new THREE.DirectionalLight(0x7d93c4, 0.2);
-    moon.position.set(5, 4, 3);
-    s.add(moon);
-  }
-
-  buildDust() {
-    const n = 380;
+  // Partículas en el aire: polvo dorado en la luz o, en el salón de jazz, humo que sube lento.
+  buildParticles(cfg) {
+    this.dust = null;
+    if (!cfg) return;
+    const n = cfg.count;
     const pos = new Float32Array(n * 3);
     this.dustSeed = new Float32Array(n);
     const rnd = seeded(8);
@@ -318,11 +256,12 @@ export class Library3D {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({
-      size: 0.016, map: tex(dustSprite()), transparent: true, depthWrite: false,
-      blending: THREE.AdditiveBlending, color: 0xffd9a0, opacity: 0.5,
+      size: cfg.size, map: tex(dustSprite()), transparent: true, depthWrite: false,
+      blending: cfg.smoke ? THREE.NormalBlending : THREE.AdditiveBlending, color: cfg.color, opacity: cfg.opacity,
     });
     this.dust = new THREE.Points(geo, mat);
-    this.scene.add(this.dust);
+    this.dust.userData.rise = cfg.rise;
+    this.room.add(this.dust);
   }
 
   // ---------- Libros del usuario ----------
@@ -342,7 +281,7 @@ export class Library3D {
     const cover = new THREE.MeshStandardMaterial({ color: book.coverUrl ? 0xffffff : book.color, roughness: 0.5, envMap: this.env, envMapIntensity: 0.2 });
     const geo = new THREE.BoxGeometry(dims.t, dims.h, dims.d);
     // Caras: +x tapa, -x contratapa, +y/-y cantos, +z lomo, -z canto delantero.
-    const mesh = new THREE.Mesh(geo, [cover, cloth, this.mat.pages, this.mat.pages, spine, this.mat.pages]);
+    const mesh = new THREE.Mesh(geo, [cover, cloth, this.pagesMat, this.pagesMat, spine, this.pagesMat]);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.dynamic.push(geo, spine, cloth, cover, spineTex);
@@ -418,10 +357,11 @@ export class Library3D {
     this.userBooks = [];
     this.meshById.clear();
     this.hovered = null;
+    this.spinners = [];
   }
 
   setPlaque(label) {
-    const t = tex(plaqueCanvas(label));
+    const t = tex(plaqueCanvas(label, this.theme.plaque));
     if (this.plaqueMat.map) this.plaqueMat.map.dispose();
     this.plaqueMat.map = t;
     this.plaqueMat.needsUpdate = true;
@@ -439,10 +379,14 @@ export class Library3D {
   decorate(seg, start, rnd) {
     const avail = seg.x1 - start;
     if (avail < 0.26) return;
-    // Sobre todo libros antiguos; los objetos aparecen pocas veces para no recargar.
-    const kinds = ['old', 'old', 'old', 'old', 'old', 'stack', 'stack', 'candles', 'frame', 'vase', 'globe'];
-    const caps = { globe: 1, vase: 2, candles: 2, frame: 2, stack: 3 };
+    // Cada fondo tiene sus objetos; sobre todo libros, y los objetos aparecen pocas veces para no recargar.
+    // Algunos fondos tienen una pieza protagonista que va en el primer hueco (el tocadiscos del jazz).
+    const { kinds, caps, first } = this.theme.decor;
     const pick = () => {
+      if (first && !this.decorUsed[first] && avail > 0.5) {
+        this.decorUsed[first] = 1;
+        return first;
+      }
       const k = kinds[Math.floor(rnd() * kinds.length)];
       if ((this.decorUsed[k] || 0) >= (caps[k] ?? 99)) return 'old';
       this.decorUsed[k] = (this.decorUsed[k] || 0) + 1;
@@ -551,6 +495,76 @@ export class Library3D {
       g.add(fg);
       this.dynamic.push(frame.geometry, pic.geometry, ptex, pmat);
       g.userData.w = 0.24;
+      return g;
+    }
+    if (kind === 'record' && maxW > 0.44) {
+      // Gramófono de nogal: vinilo girando, brazo y una gran bocina de bronce.
+      const base = new THREE.Mesh(this.unitBox, this.mat.panel);
+      base.scale.set(0.42, 0.08, 0.32);
+      base.position.y = 0.04;
+      base.castShadow = true;
+      const platter = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.008, 48), [this.mat.woodDark, this.mat.vinyl, this.mat.woodDark]);
+      platter.position.set(-0.05, 0.085, 0);
+      const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.02, 8), this.mat.brass);
+      spindle.position.set(-0.05, 0.095, 0);
+      const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.03, 16), this.mat.brass);
+      pivot.position.set(0.15, 0.095, -0.1);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.24, 8), this.mat.brass);
+      arm.rotation.z = Math.PI / 2;
+      arm.rotation.y = -0.55;
+      arm.position.set(0.05, 0.11, -0.04);
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), this.mat.brass);
+      knob.position.set(0.17, 0.085, 0.13);
+      // bocina: un cono que se abre como una flor, apoyado en un codo junto al brazo
+      const prof = [];
+      for (let i = 0; i <= 16; i++) {
+        const y = (i / 16) * 0.3;
+        prof.push(new THREE.Vector2(0.012 + Math.pow(i / 16, 3.2) * 0.15, y));
+      }
+      const horn = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), this.mat.brass);
+      horn.material.side = THREE.DoubleSide;
+      horn.position.set(0.15, 0.11, -0.1);
+      horn.rotation.set(0.55, 0, 0.25);
+      horn.castShadow = true;
+      g.add(base, platter, spindle, pivot, arm, knob, horn);
+      this.spinners.push(platter);
+      this.dynamic.push(platter.geometry, spindle.geometry, pivot.geometry, arm.geometry, knob.geometry, horn.geometry);
+      g.userData.w = 0.44;
+      return g;
+    }
+    if (kind === 'sculpture' && maxW > 0.22) {
+      // Escultura: base de mármol y un aro con una esfera.
+      const base = new THREE.Mesh(this.unitBox, this.mat.stone);
+      base.scale.set(0.14, 0.06, 0.14);
+      base.position.y = 0.03;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.011, 12, 48), this.mat.brass);
+      ring.position.y = 0.06 + 0.075 + 0.011;
+      ring.rotation.y = 0.6;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.03, 24, 16), this.mat.porcelain);
+      ball.position.y = 0.06 + 0.075 + 0.011;
+      ring.castShadow = ball.castShadow = true;
+      g.add(base, ring, ball);
+      this.dynamic.push(ring.geometry, ball.geometry);
+      g.userData.w = 0.22;
+      return g;
+    }
+    if (kind === 'plant' && maxW > 0.22) {
+      // Maceta pequeña con hojas.
+      const pts = [[0, 0], [0.05, 0], [0.065, 0.11], [0.07, 0.12], [0, 0.12]].map(([a, b]) => new THREE.Vector2(a, b));
+      const pot = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), this.mat.pot);
+      g.add(pot);
+      this.dynamic.push(pot.geometry);
+      const leafGeo = new THREE.SphereGeometry(1, 10, 6);
+      this.dynamic.push(leafGeo);
+      for (let i = 0; i < 8; i++) {
+        const leaf = new THREE.Mesh(leafGeo, this.mat.leaf);
+        const a = (i / 8) * Math.PI * 2;
+        leaf.scale.set(0.025, 0.085, 0.008);
+        leaf.position.set(Math.cos(a) * 0.03, 0.18 + (i % 3) * 0.02, Math.sin(a) * 0.03);
+        leaf.rotation.set(Math.sin(a) * 0.5, -a, -Math.cos(a) * 0.5);
+        g.add(leaf);
+      }
+      g.userData.w = 0.22;
       return g;
     }
     if (kind === 'old' || maxW > 0.2) {
@@ -839,17 +853,20 @@ export class Library3D {
       m.rotation.x = -ud.pull * 0.5;
     }
 
-    this.fire.intensity = 5.5 + Math.sin(t * 7.3) * 0.7 + Math.sin(t * 13.1) * 0.5 + (Math.random() - 0.5) * 0.8;
+    this.theme.tick?.(this, t, dt);
 
-    const pos = this.dust.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const sd = this.dustSeed[i];
-      let y = pos.getY(i) + dt * (0.012 + Math.sin(t * 0.3 + sd) * 0.01);
-      if (y > 3.4) y = 0.2;
-      pos.setY(i, y);
-      pos.setX(i, pos.getX(i) + Math.sin(t * 0.2 + sd) * dt * 0.01);
+    if (this.dust) {
+      const pos = this.dust.geometry.attributes.position;
+      const rise = this.dust.userData.rise;
+      for (let i = 0; i < pos.count; i++) {
+        const sd = this.dustSeed[i];
+        let y = pos.getY(i) + dt * rise * (0.012 + Math.sin(t * 0.3 + sd) * 0.01);
+        if (y > 3.4) y = 0.2;
+        pos.setY(i, y);
+        pos.setX(i, pos.getX(i) + Math.sin(t * 0.2 + sd) * dt * 0.01);
+      }
+      pos.needsUpdate = true;
     }
-    pos.needsUpdate = true;
 
     this.renderer.render(this.scene, this.camera);
     if (!this.started) {

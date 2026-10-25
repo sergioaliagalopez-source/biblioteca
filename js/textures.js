@@ -284,9 +284,147 @@ export function spineCanvas({ title, author, color, thickness, height, seed = 1 
   return c;
 }
 
+// ---------- Superficies de los otros fondos ----------
+
+// Mármol blanco con vetas grises (piso de la mansión, bases de esculturas).
+export function marbleCanvas({ w = 512, h = 512, base = '#f1ede6', vein = [120, 116, 110], seed = 5 } = {}) {
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  const img = g.createImageData(w, h);
+  const d = img.data;
+  const rnd = seeded(seed);
+  const fbm = fbmNoise(rnd);
+  const b = hexToRgb(base);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = (x / w) * 4, ny = (y / h) * 4;
+      const n = fbm(nx + fbm(nx * 0.7, ny * 0.7) * 2.5, ny);
+      const v = Math.abs(Math.sin((nx + ny * 0.6 + n * 3.2) * 2.2));
+      const vt = Math.pow(1 - v, 14) * 0.75 + Math.pow(1 - v, 60) * 0.25;
+      const shadeN = (fbm(nx * 3, ny * 3) - 0.5) * 10;
+      const i = (y * w + x) * 4;
+      for (let k = 0; k < 3; k++) d[i + k] = b[k] + (vein[k] - b[k]) * vt + shadeN;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+// Concreto pulido (piso del ático).
+export function concreteCanvas({ w = 512, h = 512, base = '#6f6d6a', seed = 3 } = {}) {
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const rnd = seeded(seed);
+  const fbm = fbmNoise(rnd);
+  const img = g.createImageData(w, h);
+  const d = img.data;
+  const b = hexToRgb(base);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = (fbm((x / w) * 6, (y / h) * 6) - 0.5) * 34 + (rnd() - 0.5) * 8;
+      const i = (y * w + x) * 4;
+      d[i] = b[0] + n; d[i + 1] = b[1] + n; d[i + 2] = b[2] + n; d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  // juntas de las losas
+  g.strokeStyle = 'rgba(0,0,0,0.25)';
+  g.lineWidth = 2;
+  g.strokeRect(1, 1, w - 2, h - 2);
+  return c;
+}
+
+// Papel tapiz art déco: abanicos dorados sobre verde azulado profundo (salón de jazz).
+export function decoWallCanvas({ base = '#10292a', line = 'rgba(205,170,100,0.55)' } = {}) {
+  const w = 512, h = 512;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = base;
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = line;
+  g.lineWidth = 2;
+  const R = 64;
+  for (let row = -1; row < h / (R / 2) + 1; row++) {
+    for (let col = -1; col < w / R + 1; col++) {
+      const cx = col * R + (row % 2 ? R / 2 : 0);
+      const cy = row * (R / 2) + R / 2;
+      for (let k = 1; k <= 3; k++) {
+        g.beginPath();
+        g.arc(cx, cy, (R / 2) * (k / 3), Math.PI, 2 * Math.PI);
+        g.stroke();
+      }
+      for (let a = 0; a <= 6; a++) {
+        const ang = Math.PI + (a / 6) * Math.PI;
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.lineTo(cx + Math.cos(ang) * R * 0.16, cy + Math.sin(ang) * R * 0.16);
+        g.stroke();
+      }
+    }
+  }
+  grain(g, w, h, 0.05, seeded(9));
+  return c;
+}
+
+// Cortina de seda con pliegues verticales.
+export function curtainCanvas({ base = '#efe2cc' } = {}) {
+  const w = 256, h = 64;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const grad = g.createLinearGradient(0, 0, w, 0);
+  for (let i = 0; i <= 16; i++) {
+    const s = Math.sin((i / 16) * Math.PI * 7);
+    grad.addColorStop(i / 16, shade(base, s > 0 ? s * 0.18 : s * 0.22));
+  }
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  grain(g, w, h, 0.04, seeded(4));
+  return c;
+}
+
+// Disco de vinilo con surcos y etiqueta (tocadiscos del salón de jazz).
+export function vinylCanvas() {
+  const S = 256;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  g.fillStyle = '#0d0d0f';
+  g.fillRect(0, 0, S, S);
+  for (let r = 40; r < S / 2; r += 2) {
+    g.strokeStyle = `rgba(255,255,255,${r % 6 ? 0.03 : 0.07})`;
+    g.beginPath();
+    g.arc(S / 2, S / 2, r, 0, Math.PI * 2);
+    g.stroke();
+  }
+  // reflejo de luz
+  const sheen = g.createConicGradient(0.6, S / 2, S / 2);
+  sheen.addColorStop(0, 'rgba(255,255,255,0)');
+  sheen.addColorStop(0.08, 'rgba(255,255,255,0.12)');
+  sheen.addColorStop(0.16, 'rgba(255,255,255,0)');
+  sheen.addColorStop(0.5, 'rgba(255,255,255,0)');
+  sheen.addColorStop(0.58, 'rgba(255,255,255,0.1)');
+  sheen.addColorStop(0.66, 'rgba(255,255,255,0)');
+  g.fillStyle = sheen;
+  g.fillRect(0, 0, S, S);
+  g.fillStyle = '#8c1d2a';
+  g.beginPath();
+  g.arc(S / 2, S / 2, 34, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#e8d29a';
+  g.font = `600 13px ${SERIF}`;
+  g.textAlign = 'center';
+  g.fillText('JAZZ', S / 2, S / 2 - 10);
+  g.fillStyle = '#111';
+  g.beginPath();
+  g.arc(S / 2, S / 2, 3, 0, Math.PI * 2);
+  g.fill();
+  return c;
+}
+
 // ---------- Placa de bronce grabada ----------
 
-export function plaqueCanvas(text) {
+export function plaqueCanvas(text, style = 'brass') {
+  if (style === 'black') return blackPlaqueCanvas(text);
   const w = 1024, h = 150;
   const c = makeCanvas(w, h);
   const g = c.getContext('2d');
@@ -337,6 +475,28 @@ export function plaqueCanvas(text) {
   g.fillText(t, w / 2 + 6, h / 2 + 3);
   g.fillStyle = '#35250d';
   g.fillText(t, w / 2 + 6, h / 2 + 1);
+  return c;
+}
+
+// Placa minimalista: negro mate con letras blancas espaciadas (ático moderno).
+function blackPlaqueCanvas(text) {
+  const w = 1024, h = 150;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  g.fillStyle = '#141414';
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = '#f2efe9';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.letterSpacing = '22px';
+  const t = text.toUpperCase();
+  let size = 48;
+  g.font = `400 ${size}px "Helvetica Neue", Arial, sans-serif`;
+  while (g.measureText(t).width > w - 140 && size > 20) {
+    size -= 2;
+    g.font = `400 ${size}px "Helvetica Neue", Arial, sans-serif`;
+  }
+  g.fillText(t, w / 2 + 11, h / 2 + 2);
   return c;
 }
 

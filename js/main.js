@@ -6,15 +6,21 @@ import { Reader, HL_COLORS } from './reader.js';
 import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects } from './pdfdoc.js';
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
+import { THEMES, AMBIENTS, themeById, isUnlocked } from './themes.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const DEFAULT_CATEGORIES = ['Novela', 'Clásicos', 'Historia', 'Filosofía', 'Negocios', 'Desarrollo personal', 'Ciencia'];
-const AMBIENTS = [
-  { id: 'off', label: 'Silencio' },
-  { id: 'rain', label: 'Lluvia' },
-  { id: 'fire', label: 'Chimenea' },
-];
+
+// Íconos de línea, en blanco y negro (toman el color del texto).
+const ICON = {
+  speaker: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></svg>',
+  muted: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
+  shelf: '<svg viewBox="0 0 24 24"><path d="M4 3.5v17M20 3.5v17M4 9.5h16M4 15.5h16M3 20.5h18"/><path d="M7 9.5V5.5M9.5 9.5V6M12.5 15.5v-4M15 15.5l1.6-4"/></svg>',
+  close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+};
 
 const state = {
   books: [],
@@ -22,7 +28,8 @@ const state = {
   active: prefs.get('bib.cat') || 'all',
   reading: null,
   coverUrls: new Map(),
-  ambient: prefs.get('bib.ambient') || 'off',
+  theme: themeById(prefs.get('bib.theme')).id,
+  ambientMode: AMBIENTS[prefs.get('bib.ambientMode')] ? prefs.get('bib.ambientMode') : 'theme',
 };
 let lib;
 let reader;
@@ -44,13 +51,15 @@ async function boot() {
     onClose: closeReader,
     onSave: (book) => db.put('books', book),
     onEdit: (book) => editBook(book.id),
-    onAmbient: cycleAmbient,
+    onAmbient: () => toggleSoundPanel($('#rSound')),
     onHighlights: showHighlights,
   });
   reader.toast = toast;
 
   try {
     lib = new Library3D($('#scene'), {
+      theme: state.theme,
+      onThunder: () => sound.thunder(),
       onHover: showTooltip,
       onOpen: openBook,
       onContext: bookMenu,
@@ -63,7 +72,8 @@ async function boot() {
   }
   refreshShelf();
   bindUI();
-  updateAmbientLabels();
+  updateThemeButton();
+  updateSoundIcons();
   updateCloud();
   registerServiceWorker();
   if (!db.persistent && !db.folder) {
@@ -997,31 +1007,132 @@ function toast(text, ms = 2600) {
   }, ms);
 }
 
-function updateAmbientLabels() {
-  const label = AMBIENTS.find((a) => a.id === state.ambient)?.label || 'Silencio';
-  const icon = state.ambient === 'off' ? '♪' : state.ambient === 'rain' ? '☂' : '♨';
-  $('#ambientBtn').textContent = `${icon}  ${label}`;
-  // En el teléfono la barra del lector sólo muestra el ícono.
-  $('#rSound').innerHTML = `${icon}<span>${label}</span>`;
-}
-
 // Hace la app instalable y usable sin internet (sólo cuando se sirve por http/https).
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
   navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Sin modo sin conexión:', err));
 }
 
-function cycleAmbient() {
-  const i = AMBIENTS.findIndex((a) => a.id === state.ambient);
-  state.ambient = AMBIENTS[(i + 1) % AMBIENTS.length].id;
-  prefs.set('bib.ambient', state.ambient);
-  sound.setAmbient(state.ambient);
-  updateAmbientLabels();
+// ---------- Fondos ----------
+
+function updateThemeButton() {
+  document.body.dataset.theme = state.theme;
+  $('#themeBtn').innerHTML = `${ICON.shelf}<span>${esc(themeById(state.theme).name)}</span>`;
+}
+
+function renderThemeCards() {
+  const price = (t) =>
+    t.price === 0
+      ? '<span class="tc-price">Incluido</span>'
+      : `<span class="tc-price"><s>${t.price.toFixed(2).replace('.', ',')} US$</s>${isUnlocked(t) ? ' <em>Gratis en la prueba</em>' : ''}</span>`;
+  $('#themeCards').innerHTML = THEMES.map(
+    (t) => `
+    <button class="theme-card ${t.id === state.theme ? 'on' : ''}" data-id="${t.id}">
+      <span class="tc-img" style="background-image:url('${t.preview}')"><span class="tc-check">${ICON.check}</span></span>
+      <span class="tc-body">
+        <span class="tc-name">${esc(t.name)}</span>
+        <span class="tc-mood">${esc(t.mood)}</span>
+        <span class="tc-meta"><span class="tc-sound">${ICON.speaker}${esc(AMBIENTS[t.sound])}</span>${price(t)}</span>
+      </span>
+    </button>`
+  ).join('');
+}
+
+function openThemes() {
+  if (state.reading || switchingTheme) return;
+  closeSoundPanel();
+  renderThemeCards();
+  $('#themes').hidden = false;
+  requestAnimationFrame(() => $('#themes').classList.add('in'));
+  $('#themeCards .on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+
+function closeThemes() {
+  const el = $('#themes');
+  el.classList.remove('in');
+  setTimeout(() => (el.hidden = true), 320);
+}
+
+// Cambio de fondo: la sala se oscurece, aparece el nombre del nuevo fondo, y la cámara entra
+// al nuevo ambiente mientras el sonido cambia con un fundido.
+let switchingTheme = false;
+async function chooseTheme(id) {
+  const t = themeById(id);
+  closeThemes();
+  if (id === state.theme || switchingTheme || state.reading) return;
+  if (!isUnlocked(t)) return toast(`«${t.name}» cuesta ${t.price.toFixed(2).replace('.', ',')} US$`);
+  switchingTheme = true;
+  const curtain = $('#curtain');
+  curtain.querySelector('h2').textContent = t.name;
+  curtain.querySelector('p').textContent = t.mood;
+  curtain.classList.add('show');
+  await wait(800);
+  lib.setTheme(id);
+  state.theme = id;
+  prefs.set('bib.theme', id);
+  lib.dollyIn();
+  applyAmbient();
+  updateThemeButton();
+  await wait(1100);
+  curtain.classList.remove('show');
+  await wait(900);
+  switchingTheme = false;
+}
+
+// ---------- Sonido ----------
+
+const effectiveAmbient = () => (state.ambientMode === 'theme' ? themeById(state.theme).sound : state.ambientMode);
+
+function applyAmbient() {
+  sound.setAmbient(effectiveAmbient());
+  updateSoundIcons();
 }
 
 // El navegador sólo permite sonar después de una interacción del usuario.
 function startAmbientIfNeeded() {
-  if (state.ambient !== 'off' && sound.ambient !== state.ambient) sound.setAmbient(state.ambient);
+  if (sound.ambient !== effectiveAmbient()) applyAmbient();
+}
+
+function updateSoundIcons() {
+  const silent = sound.getVolume('master') === 0 || effectiveAmbient() === 'off';
+  for (const id of ['#soundBtn', '#rSound']) $(id).innerHTML = silent ? ICON.muted : ICON.speaker;
+}
+
+function renderSoundPanel() {
+  const themeSound = AMBIENTS[themeById(state.theme).sound];
+  const chip = ([id, label]) =>
+    `<button class="sp-chip ${id === state.ambientMode ? 'on' : ''}" data-amb="${id}">${id === 'theme' ? `${label} · ${esc(themeSound)}` : esc(label)}</button>`;
+  const slider = (kind, label) =>
+    `<label class="sp-row"><span>${label}</span><input type="range" class="gold-range" min="0" max="100" value="${Math.round(sound.getVolume(kind) * 100)}" data-vol="${kind}"></label>`;
+  $('#soundPanel').innerHTML = `
+    <div class="sp-head">${ICON.speaker}<span>Sonido</span></div>
+    <div class="sp-label">Ambiente</div>
+    <div class="sp-chips">${Object.entries(AMBIENTS).map(chip).join('')}</div>
+    ${slider('master', 'Volumen general')}
+    ${slider('ambient', 'Ambiente')}
+    ${slider('fx', 'Hojas y cinta')}`;
+  $('#soundPanel').querySelectorAll('.gold-range').forEach(paintRange);
+}
+
+function paintRange(r) {
+  r.style.setProperty('--p', `${r.value}%`);
+}
+
+function toggleSoundPanel(anchor) {
+  const panel = $('#soundPanel');
+  if (!panel.hidden) return closeSoundPanel();
+  renderSoundPanel();
+  panel.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const w = panel.offsetWidth, h = panel.offsetHeight;
+  const below = r.bottom + h + 12 < innerHeight;
+  panel.style.left = `${Math.min(Math.max(8, r.right - w), innerWidth - w - 8)}px`;
+  panel.style.top = `${below ? r.bottom + 10 : Math.max(8, r.top - h - 10)}px`;
+  startAmbientIfNeeded();
+}
+
+function closeSoundPanel() {
+  $('#soundPanel').hidden = true;
 }
 
 // ---------- Eventos ----------
@@ -1055,7 +1166,36 @@ function bindUI() {
     ]);
   });
 
-  $('#ambientBtn').addEventListener('click', cycleAmbient);
+  $('#themeBtn').addEventListener('click', openThemes);
+  $('#themes').addEventListener('click', (e) => {
+    const card = e.target.closest('.theme-card');
+    if (card) chooseTheme(card.dataset.id);
+    else if (e.target.closest('[data-close]') || e.target.id === 'themes') closeThemes();
+  });
+  $('#soundBtn').addEventListener('click', (e) => toggleSoundPanel(e.currentTarget));
+  $('#soundPanel').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-amb]');
+    if (!chip) return;
+    state.ambientMode = chip.dataset.amb;
+    prefs.set('bib.ambientMode', state.ambientMode);
+    applyAmbient();
+    renderSoundPanel();
+  });
+  $('#soundPanel').addEventListener('input', (e) => {
+    const r = e.target.closest('[data-vol]');
+    if (!r) return;
+    sound.setVolume(r.dataset.vol, r.value / 100);
+    paintRange(r);
+    updateSoundIcons();
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#soundPanel, #soundBtn, #rSound')) closeSoundPanel();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!$('#themes').hidden) closeThemes();
+    closeSoundPanel();
+  });
   $('#cloudBtn').addEventListener('click', cloudClick);
   bindSearch();
   window.addEventListener('focus', checkRemote);
