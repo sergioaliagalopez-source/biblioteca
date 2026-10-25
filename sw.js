@@ -1,6 +1,6 @@
 // Service worker: guarda la app en el dispositivo para que abra sin internet.
 // Al publicar una versión nueva, sube el número de VERSION para que los teléfonos la descarguen.
-const VERSION = 'biblioteca-v1';
+const VERSION = 'biblioteca-v2';
 
 const SHELL = [
   './',

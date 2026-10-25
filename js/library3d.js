@@ -679,6 +679,7 @@ export class Library3D {
       if (this.downAt && Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 10) clearTimeout(this.pressTimer);
       // Con el dedo la cámara no sigue al puntero: se cambia de tramo deslizando.
       if (e.pointerType !== 'mouse') return;
+      this.touch = false;
       this.mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
       this.ndc.copy(this.mouse);
       this.needsPick = true;
@@ -690,6 +691,7 @@ export class Library3D {
     c.addEventListener('pointerdown', (e) => {
       this.downAt = { x: e.clientX, y: e.clientY };
       this.longPressed = false;
+      this.touch = e.pointerType !== 'mouse';
       if (e.pointerType !== 'mouse') {
         this.pointer.x = e.clientX;
         this.pointer.y = e.clientY;
@@ -741,8 +743,13 @@ export class Library3D {
     this.needsPick = false;
     let m = null;
     if (!this.frozen && this.ndc.x < 2) {
-      this.raycaster.setFromCamera(this.ndc, this.camera);
-      m = this.raycaster.intersectObjects(this.userBooks, false)[0]?.object || null;
+      // Con el dedo, si no se acierta justo al lomo, se prueba un poco a los lados (los lomos son finitos).
+      const offsets = this.touch ? [0, -10, 10, -20, 20] : [0];
+      for (const px of offsets) {
+        this.raycaster.setFromCamera(new THREE.Vector2(this.ndc.x + (px * 2) / innerWidth, this.ndc.y), this.camera);
+        m = this.raycaster.intersectObjects(this.userBooks, false)[0]?.object || null;
+        if (m) break;
+      }
     }
     if (m !== this.hovered) {
       this.hovered = m;
@@ -764,7 +771,8 @@ export class Library3D {
     if (this.phone) {
       const [a, b] = this.mainBays[0];
       const fitW = ((b - a) / 2 + 0.1) / (halfTan * this.camera.aspect);
-      const fitH = 1.3 / halfTan;
+      // Alto suficiente para que la placa de bronce quede por encima de los controles de abajo (iPad vertical).
+      const fitH = 1.6 / halfTan;
       this.maxDist = Math.max(fitW, fitH);
       this.minDist = this.maxDist * 0.6;
       this.bay ??= Math.floor(this.mainBays.length / 2);

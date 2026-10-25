@@ -612,6 +612,13 @@ body.reading #topbar, body.reading #footbar, body.reading #empty { opacity: 0; p
 .hl-item .x { flex: none; background: none; border: none; color: #8f2a2a; font-size: 18px; line-height: 1; padding: 2px 6px; opacity: 0.6; }
 .hl-item .x:hover { opacity: 1; }
 
+/* Ayuda de abajo: con dedo (iPad, iPhone) o con ratón */
+.hint-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .hint-mouse { display: none; }
+  .hint-touch { display: inline; }
+}
+
 /* Tramos de la estantería (teléfono) */
 .bay-dots { pointer-events: auto; display: flex; align-items: center; gap: 4px; }
 .bay-dots:empty { display: none; }
