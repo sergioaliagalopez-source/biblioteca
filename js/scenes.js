@@ -3,9 +3,9 @@
 import * as THREE from 'three';
 import {
   woodCanvas, floorCanvas, wallCanvas, paperEdgeCanvas, globeCanvas, marbleCanvas, concreteCanvas,
-  decoWallCanvas, curtainCanvas, vinylCanvas, PALETTE,
+  decoWallCanvas, curtainCanvas, vinylCanvas, carbonCanvas, trackCanvas, helmetCanvas, suitCanvas, bannerCanvas, PALETTE,
 } from './textures.js';
-import { seaBackdrop, cityBackdrop } from './backdrops.js';
+import { seaBackdrop, cityBackdrop, paddockBackdrop } from './backdrops.js';
 
 // Estantería principal (metros). Las filas indican la altura de cada balda.
 export const BC = { w: 4.2, h: 3.04, d: 0.42, z: -1.8, rows: [0.72, 1.3, 1.88, 2.46], side: 0.06, shelfT: 0.035, divider: 0.035, base: 0.66 };
@@ -290,6 +290,115 @@ function modernCase(lib) {
   lib.mainBays = bays;
 }
 
+// ---------- Carreras: autos, cascos y trajes ----------
+
+// Pinturas de los equipos (colores y números, sin logos ni marcas).
+export const LIVERIES = [
+  { body: 0xc8102e, accent: 0x161616, helmet: '#f4d000', number: '16', stripe: '#ffffff' },
+  { body: 0xc8102e, accent: 0xf2f2f2, helmet: '#c8102e', number: '55', stripe: '#f4d000' },
+  { body: 0xb9bcc2, accent: 0x111111, helmet: '#7a00d4', number: '44', stripe: '#00d2be' },
+  { body: 0xff8000, accent: 0x1c3d8f, helmet: '#ffd200', number: '4', stripe: '#1c3d8f' },
+  { body: 0x0b1f5c, accent: 0xd8102e, helmet: '#0b1f5c', number: '1', stripe: '#ffd200' },
+];
+
+// Auto de F1 de ~5,4 m mirando hacia +x, apoyado en y = 0. `track` junta lo que hay que liberar.
+export function buildF1Car(livery, track = []) {
+  const keep = (x) => (track.push(x), x);
+  const body = keep(std({ color: livery.body, metalness: 0.35, roughness: 0.32 }));
+  const accent = keep(std({ color: livery.accent, metalness: 0.25, roughness: 0.4 }));
+  const carbon = keep(std({ color: 0x17171a, roughness: 0.45, metalness: 0.3 }));
+  const rubber = keep(std({ color: 0x0c0c0c, roughness: 0.9 }));
+  const rim = keep(std({ color: 0x8e9096, metalness: 0.9, roughness: 0.3 }));
+  const helmetMat = keep(std({ color: new THREE.Color(livery.helmet), roughness: 0.25, metalness: 0.2 }));
+  const g = new THREE.Group();
+  const box = (sx, sy, sz, x, y, z, mat) => {
+    const mesh = new THREE.Mesh(keep(new THREE.BoxGeometry(sx, sy, sz)), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    g.add(mesh);
+    return mesh;
+  };
+  box(4.4, 0.04, 1.5, -0.1, 0.06, 0, carbon); // fondo plano
+  box(1.8, 0.42, 0.72, 0.55, 0.32, 0, body); // monocasco
+  const nose = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.09, 0.24, 1.6, 14)), body);
+  nose.rotation.z = -Math.PI / 2;
+  nose.scale.z = 0.75;
+  nose.position.set(2.2, 0.24, 0);
+  g.add(nose);
+  box(0.46, 0.04, 2.0, 2.86, 0.1, 0, accent); // alerón delantero
+  box(0.5, 0.18, 0.03, 2.86, 0.16, 0.99, body);
+  box(0.5, 0.18, 0.03, 2.86, 0.16, -0.99, body);
+  box(1.5, 0.36, 0.42, -0.05, 0.3, 0.55, body); // pontones
+  box(1.5, 0.36, 0.42, -0.05, 0.3, -0.55, body);
+  box(1.6, 0.4, 0.5, -0.8, 0.5, 0, body); // cubierta del motor
+  box(0.32, 0.3, 0.28, 0.02, 0.78, 0, carbon); // toma de aire
+  box(0.42, 0.05, 1.0, -2.2, 0.94, 0, accent); // alerón trasero
+  box(0.36, 0.05, 1.0, -2.24, 0.8, 0, carbon);
+  box(0.6, 0.55, 0.03, -2.2, 0.68, 0.5, body);
+  box(0.6, 0.55, 0.03, -2.2, 0.68, -0.5, body);
+  const halo = new THREE.Mesh(keep(new THREE.TorusGeometry(0.3, 0.03, 8, 20, Math.PI)), carbon);
+  halo.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+  halo.position.set(0.32, 0.72, 0);
+  g.add(halo);
+  const helmet = new THREE.Mesh(keep(new THREE.SphereGeometry(0.13, 16, 12)), helmetMat);
+  helmet.position.set(0.18, 0.66, 0);
+  g.add(helmet);
+  const tyreGeo = keep(new THREE.CylinderGeometry(0.36, 0.36, 0.38, 24));
+  const rimGeo = keep(new THREE.CylinderGeometry(0.22, 0.22, 0.39, 16));
+  for (const x of [1.65, -1.6]) {
+    for (const z of [0.82, -0.82]) {
+      const tyre = new THREE.Mesh(tyreGeo, rubber);
+      const wheelRim = new THREE.Mesh(rimGeo, rim);
+      for (const m of [tyre, wheelRim]) {
+        m.rotation.x = Math.PI / 2;
+        m.position.set(x, 0.36, z * (x > 0 ? 1 : 1.04));
+        g.add(m);
+      }
+    }
+  }
+  return g;
+}
+
+// Casco de colección sobre su soporte (mirando hacia +z).
+export function buildHelmet(livery, track = [], env) {
+  const keep = (x) => (track.push(x), x);
+  const g = new THREE.Group();
+  const paint = keep(tex(helmetCanvas({ base: '#' + new THREE.Color(livery.body).getHexString(), stripe: livery.helmet, accent: livery.stripe, number: livery.number })));
+  const shellMat = keep(std({ map: paint, roughness: 0.18, metalness: 0.1, envMap: env, envMapIntensity: 0.9 }));
+  const visorMat = keep(std({ color: 0x15161a, roughness: 0.05, metalness: 0.6, envMap: env, envMapIntensity: 1.4 }));
+  const shell = new THREE.Mesh(keep(new THREE.SphereGeometry(0.12, 40, 28)), shellMat);
+  shell.scale.set(1, 0.95, 1.12);
+  shell.rotation.y = -Math.PI / 2;
+  // visera: una franja de esfera un poco más grande, al frente
+  // (phi = π/2 es el frente, hacia +z)
+  const visor = new THREE.Mesh(keep(new THREE.SphereGeometry(0.123, 32, 12, Math.PI * 0.18, Math.PI * 0.64, Math.PI * 0.36, Math.PI * 0.2)), visorMat);
+  visor.scale.copy(shell.scale);
+  const chin = new THREE.Mesh(keep(new THREE.TorusGeometry(0.1, 0.022, 10, 24, Math.PI)), shellMat);
+  chin.rotation.set(Math.PI / 2 + 0.5, 0, 0);
+  chin.position.set(0, -0.06, 0.03);
+  const head = new THREE.Group();
+  head.add(shell, visor, chin);
+  head.position.y = 0.14;
+  const stand = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.035, 0.06, 0.04, 20)), keep(std({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.5 })));
+  stand.position.y = 0.02;
+  g.add(stand, head);
+  head.traverse((m) => (m.castShadow = true));
+  return g;
+}
+
+// Traje de piloto en un marco con vidrio, como trofeo.
+export function buildFramedSuit(w, h, track = []) {
+  const keep = (x) => (track.push(x), x);
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(keep(new THREE.BoxGeometry(w, h, 0.05)), keep(std({ color: 0x111113, roughness: 0.35, metalness: 0.4 })));
+  const art = new THREE.Mesh(keep(new THREE.PlaneGeometry(w * 0.86, h * 0.88)), keep(std({ map: keep(tex(suitCanvas())), roughness: 0.7 })));
+  art.position.z = 0.026;
+  const glass = new THREE.Mesh(keep(new THREE.PlaneGeometry(w * 0.9, h * 0.92)), keep(new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, roughness: 0.02, metalness: 0 })));
+  glass.position.z = 0.03;
+  g.add(frame, art, glass);
+  return g;
+}
+
 // ---------- Los cuatro fondos ----------
 
 export const SCENES = {
@@ -476,6 +585,146 @@ export const SCENES = {
   },
 };
 
+// Paddock Club: suite sobre la recta principal. Estantería de fibra de carbono con detalles rojos,
+// ventanal al circuito y, cada 45 segundos, semáforo de largada y autos que pasan a toda velocidad.
+SCENES.paddock = {
+  background: 0xa9c6e8,
+  fog: [0xc4d6ea, 30, 90],
+  exposure: 1.0,
+  palette: ['#c8102e', '#161616', '#f2f2f2', '#9a0d22', '#f4d000', '#3a3a3e', '#d8d8dc', '#7a0a18'],
+  paletteGain: 0.85,
+  plaque: 'black',
+  decor: {
+    first: 'suit',
+    kinds: ['helmet', 'helmet', 'modelcar', 'modelcar', 'modelcar', 'trophy', 'trophy', 'wheel', 'tyres', 'flag', 'old', 'stack'],
+    caps: { helmet: 4, modelcar: 4, trophy: 2, wheel: 1, tyres: 2, flag: 1, stack: 2 },
+  },
+  particles: null,
+  materials: (env) => ({
+    wood: std({ map: tex(carbonCanvas(), [6, 1]), roughness: 0.28, metalness: 0.35, envMap: env, envMapIntensity: 0.7 }),
+    woodDark: std({ color: 0x0f0f11, roughness: 0.25, metalness: 0.2, envMap: env, envMapIntensity: 0.6 }),
+    brass: std({ color: 0xd6d7db, metalness: 1, roughness: 0.18, envMap: env, envMapIntensity: 1.2 }),
+    glow: std({ color: 0xfff6ee, emissive: 0xffffff, emissiveIntensity: 2.2 }),
+    red: std({ color: 0xc8102e, metalness: 0.4, roughness: 0.25, envMap: env, envMapIntensity: 0.8 }),
+    gold: std({ color: 0xe0b44e, metalness: 1, roughness: 0.2, envMap: env, envMapIntensity: 1.3 }),
+    rubber: std({ color: 0x101010, roughness: 0.85 }),
+    acrylic: new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.14, roughness: 0.02, metalness: 0, envMap: env, envMapIntensity: 1 }),
+    porcelain: std({ color: 0xf2f2f2, roughness: 0.3 }),
+  }),
+  build(lib) {
+    const fx = lib.fx;
+    floor(lib, std({ map: tex(concreteCanvas({ base: '#3a3a3d', seed: 21 }), [6, 5]), roughness: 0.22, envMap: lib.env, envMapIntensity: 0.7 }), { toWindow: true });
+    walls(lib, std({ color: 0x2a2a2d, roughness: 0.7 }), { back: false });
+    ceiling(lib, 0x1e1e21);
+    // la suite está en alto: la pista queda abajo y la tribuna enfrente, más lejos, con el cielo arriba
+    const view = paddockBackdrop(110, 40);
+    view.mesh.position.set(0, 12.0, BC.z - 28);
+    lib.room.add(view.mesh);
+    fx.view = view.uniforms;
+    // la pista y la calle de boxes, abajo de la suite
+    const trackTex = tex(trackCanvas(), [9, 1]);
+    const track = plane(140, 15.4, std({ map: trackTex, roughness: 0.8 }));
+    track.rotation.x = -Math.PI / 2;
+    track.position.set(0, -1.6, BC.z - 0.8 - 7.7);
+    track.receiveShadow = true;
+    lib.room.add(track);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(140, 0.7, 0.25), std({ map: tex(bannerCanvas(), [18, 1]), roughness: 0.6 }));
+    wall.position.set(0, -1.25, -7.95);
+    lib.room.add(wall);
+    // panel del semáforo de largada junto al muro
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.55, 0.18), lib.mat.woodDark);
+    panel.position.set(6.4, 0.9, -8.1);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, 0.12), lib.mat.woodDark);
+    post.position.set(6.4, -0.6, -8.1);
+    lib.room.add(panel, post);
+    fx.lamps = [];
+    for (let i = 0; i < 5; i++) {
+      const m = std({ color: 0x220303, emissive: 0xff1a1a, emissiveIntensity: 0 });
+      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.17, 24), m);
+      lamp.position.set(6.4 - 1.08 + i * 0.54, 0.9, -8.0);
+      lib.room.add(lamp);
+      fx.lamps.push(m);
+    }
+    windowFrame(lib, std({ color: 0x1b1b1d, roughness: 0.4, metalness: 0.5 }), { step: 2.4, thick: 0.05, z: BC.z - 0.8 });
+    modernCase(lib);
+    // filete rojo en el frente de cada repisa
+    for (const y of BC.rows) {
+      const strip = new THREE.Mesh(lib.unitBox, lib.mat.red);
+      strip.scale.set(BC.w - 2 * BC.side, 0.008, 0.006);
+      strip.position.set(0, y - 0.006, BC.z + BC.d / 2 - 0.012);
+      lib.room.add(strip);
+    }
+    // a los costados: traje enmarcado grande y una pila de neumáticos con un casco encima
+    const suit = buildFramedSuit(1.0, 1.45);
+    suit.position.set(-3.15, 1.25, FRONT_Z + 0.35);
+    suit.rotation.y = 0.35;
+    const easel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), lib.mat.woodDark);
+    easel.position.set(-3.15, 0.4, FRONT_Z + 0.25);
+    lib.room.add(suit, easel);
+    const tyreGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.27, 32);
+    const stripeGeo = new THREE.TorusGeometry(0.25, 0.012, 8, 40);
+    for (let i = 0; i < 3; i++) {
+      const tyre = new THREE.Mesh(tyreGeo, lib.mat.rubber);
+      tyre.position.set(3.05, 0.135 + i * 0.275, FRONT_Z + 0.45);
+      tyre.castShadow = true;
+      const stripe = new THREE.Mesh(stripeGeo, i === 1 ? lib.mat.gold : lib.mat.red);
+      stripe.rotation.x = Math.PI / 2;
+      stripe.position.set(3.05, 0.27 + i * 0.275 + 0.001, FRONT_Z + 0.45);
+      lib.room.add(tyre, stripe);
+    }
+    const bigHelmet = buildHelmet(LIVERIES[0], [], lib.env);
+    bigHelmet.scale.setScalar(1.6);
+    bigHelmet.position.set(3.05, 0.83, FRONT_Z + 0.45);
+    bigHelmet.rotation.y = -0.5;
+    lib.room.add(bigHelmet);
+    // los autos de la carrera, esperando fuera de cuadro
+    fx.cars = LIVERIES.slice(0, 4).map((liv) => {
+      const car = buildF1Car(liv);
+      car.position.set(-200, -1.6, -14.4);
+      car.visible = false;
+      lib.room.add(car);
+      return car;
+    });
+    fx.nextRace = null; // la primera largada, unos segundos después de entrar al fondo
+    // luz de día
+    lib.room.add(new THREE.HemisphereLight(0xe2eeff, 0x4a4a4a, 1.0), new THREE.AmbientLight(0xffffff, 0.18));
+    keyLight(lib, 0xffffff, 22);
+    const sun = new THREE.DirectionalLight(0xfff1d8, 1.7);
+    sun.position.set(-6, 12, -22);
+    sun.target.position.set(0, -1.6, -14);
+    lib.room.add(sun, sun.target);
+    for (const y of BC.rows) {
+      const led = new THREE.PointLight(0xf4f6ff, 1.3, 2.6, 2);
+      led.position.set(0, y + 0.5, FRONT_Z + 0.12);
+      lib.room.add(led);
+    }
+  },
+  tick(lib, t, dt) {
+    const fx = lib.fx;
+    fx.view.uTime.value = t;
+    fx.nextRace ??= t + 4;
+    // Cada 45 s: se encienden las cinco luces una por una, se apagan... y largan.
+    if (t >= fx.nextRace && !fx.race) {
+      fx.race = { start: t, cars: fx.cars.map((car, i) => ({ car, x0: -95 - i * (14 + Math.random() * 10), speed: 62 - i * 1.5 })) };
+      fx.nextRace = t + 45;
+      // momento en que cada auto pasa frente a la cámara (para el sonido)
+      lib.handlers.onRace?.(fx.race.cars.map((c) => 4.6 + -c.x0 / c.speed));
+    }
+    const race = fx.race;
+    if (!race) return;
+    const k = t - race.start;
+    fx.lamps.forEach((m, i) => (m.emissiveIntensity = k > i * 0.8 && k < 4.4 ? 3 : 0));
+    let running = false;
+    for (const c of race.cars) {
+      const x = k < 4.6 ? -999 : c.x0 + (k - 4.6) * c.speed;
+      c.car.visible = x > -90 && x < 90;
+      c.car.position.x = x;
+      if (x < 90) running = true;
+    }
+    if (!running && k > 5) fx.race = null;
+  },
+};
+
 // Material compartido entre fondos (cantos de páginas de los libros).
 export function pagesMaterial() {
   const m = std({ map: tex(paperEdgeCanvas()), color: 0xf2e6cb, roughness: 0.9 });
@@ -487,6 +736,7 @@ export function sceneMaterials(id, env) {
   const base = baseMaterials(env);
   const own = SCENES[id].materials(env);
   for (const k of Object.keys(own)) {
+    if (!base[k]) continue;
     base[k].map?.dispose();
     base[k].dispose();
   }

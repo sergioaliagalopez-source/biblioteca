@@ -125,13 +125,119 @@ function scheduler(tick) {
   return () => clearInterval(id);
 }
 
+// Lluvia escuchada desde adentro: el vidrio se come los agudos, así que queda un rumor grave y
+// suave, gotas que tocan la ventana, una canaleta que gotea y ráfagas lentas de viento.
+function indoorRain(out) {
+  const c = audio();
+  const glass = c.createBiquadFilter();
+  glass.type = 'lowpass';
+  glass.frequency.value = 2600;
+  const bed = c.createGain();
+  bed.gain.value = 0.9;
+  bed.connect(glass).connect(out);
+  const body = noiseLoop(bed, 'brown', [{ type: 'lowpass', freq: 650 }], 0.34);
+  const texture = noiseLoop(bed, 'pink', [{ type: 'bandpass', freq: 1000, q: 0.55 }, { type: 'lowpass', freq: 1700 }], 0.06);
+  let alive = true;
+  const timers = [];
+  const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
+  const gust = () => {
+    const t = c.currentTime;
+    bed.gain.cancelScheduledValues(t);
+    bed.gain.setValueAtTime(bed.gain.value, t);
+    bed.gain.linearRampToValueAtTime(0.72 + Math.random() * 0.36, t + 3 + Math.random() * 4);
+    later(gust, 5000 + Math.random() * 4000);
+  };
+  const drop = () => {
+    const t = c.currentTime;
+    if (Math.random() < 0.7) {
+      burst(glass, { at: t, dur: 0.01 + Math.random() * 0.012, filter: 'bandpass', freq: 1800 + Math.random() * 1800, q: 3.5, peak: 0.008 + Math.random() * 0.022 });
+    } else {
+      const o = c.createOscillator();
+      const f = 650 + Math.random() * 650;
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f * 0.6, t + 0.04);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.012 + Math.random() * 0.01, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      o.connect(g).connect(glass);
+      o.start(t);
+      o.stop(t + 0.08);
+    }
+    later(drop, 35 + Math.random() * 190);
+  };
+  const pan = c.createStereoPanner();
+  pan.pan.value = 0.55;
+  pan.connect(glass);
+  const drip = () => {
+    const t = c.currentTime;
+    const o = c.createOscillator();
+    o.frequency.setValueAtTime(540, t);
+    o.frequency.exponentialRampToValueAtTime(360, t + 0.05);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.02, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g).connect(pan);
+    o.start(t);
+    o.stop(t + 0.14);
+    later(drip, 1100 + Math.random() * 600);
+  };
+  gust();
+  drop();
+  later(drip, 2000);
+  return (t) => {
+    alive = false;
+    timers.forEach(clearTimeout);
+    body.stop(t);
+    texture.stop(t);
+  };
+}
+
+// Trueno lejano que retumba: un golpe grave y varios rodamientos que se apagan de a poco.
+function thunderRoll(dest, at, strength = 1) {
+  const c = audio();
+  const src = c.createBufferSource();
+  src.buffer = noise('brown', 4);
+  const lp = c.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(260, at);
+  lp.frequency.exponentialRampToValueAtTime(70, at + 6);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  let t = at;
+  let level = 0.85 * strength;
+  g.gain.exponentialRampToValueAtTime(level, (t += 0.35));
+  for (let i = 0; i < 4; i++) {
+    level *= 0.55 + Math.random() * 0.25;
+    g.gain.exponentialRampToValueAtTime(Math.max(level * 0.45, 0.001), (t += 0.4 + Math.random() * 0.5));
+    g.gain.exponentialRampToValueAtTime(Math.max(level, 0.001), (t += 0.3 + Math.random() * 0.4));
+  }
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.5);
+  src.connect(lp).connect(g).connect(dest);
+  src.start(at, Math.random() * 0.5);
+  src.stop(t + 2.6);
+}
+
 // ---------- Ambientes ----------
 
 const GENERATORS = {
+  // Lluvia tranquila y, muy de vez en cuando, un trueno lejano.
   rain(out) {
-    const a = noiseLoop(out, 'pink', [{ type: 'highpass', freq: 500 }, { type: 'lowpass', freq: 5200 }], 0.2);
-    const b = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 300 }], 0.12);
-    return (t) => [a, b].forEach((n) => n.stop(t));
+    const stopRain = indoorRain(out);
+    let alive = true;
+    let timer;
+    const rumble = () => {
+      if (!alive) return;
+      thunderRoll(out, audio().currentTime, 0.45);
+      timer = setTimeout(rumble, 50000 + Math.random() * 60000);
+    };
+    timer = setTimeout(rumble, 25000 + Math.random() * 20000);
+    return (t) => {
+      alive = false;
+      clearTimeout(timer);
+      stopRain(t);
+    };
   },
 
   fire(out) {
@@ -332,6 +438,35 @@ const GENERATORS = {
     };
   },
 
+  // Suite del paddock: murmullo de la tribuna detrás del vidrio y el zumbido del aire acondicionado.
+  // Los autos (cada 45 s) los dispara la escena con sound.race().
+  paddock(out) {
+    const c = audio();
+    const hum = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 140 }], 0.08);
+    const crowdGain = c.createGain();
+    crowdGain.gain.value = 0.7;
+    crowdGain.connect(out);
+    const crowd = noiseLoop(crowdGain, 'pink', [{ type: 'bandpass', freq: 520, q: 0.5 }, { type: 'lowpass', freq: 1300 }], 0.07);
+    let alive = true;
+    let timer;
+    const swell = () => {
+      if (!alive) return;
+      const t = c.currentTime;
+      crowdGain.gain.cancelScheduledValues(t);
+      crowdGain.gain.setValueAtTime(crowdGain.gain.value, t);
+      crowdGain.gain.linearRampToValueAtTime(0.5 + Math.random() * 0.5, t + 3 + Math.random() * 3);
+      timer = setTimeout(swell, 5000 + Math.random() * 4000);
+    };
+    swell();
+    current.crowd = crowdGain;
+    return (t) => {
+      alive = false;
+      clearTimeout(timer);
+      hum.stop(t);
+      crowd.stop(t);
+    };
+  },
+
   // Lluvia en el ventanal, acordes ambientales largos y notas sueltas de piano.
   city(out) {
     const c = audio();
@@ -339,8 +474,7 @@ const GENERATORS = {
     const send = c.createGain();
     send.gain.value = 0.9;
     send.connect(verb);
-    const r1 = noiseLoop(out, 'pink', [{ type: 'highpass', freq: 600 }, { type: 'lowpass', freq: 4800 }], 0.17);
-    const r2 = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 260 }], 0.1);
+    const stopRain = indoorRain(out);
     const CHORDS = [[48, 55, 59, 64], [45, 52, 59, 60], [41, 52, 57, 64], [43, 50, 59, 64]];
     const pad = (notes, at, len) => {
       for (const n of notes) {
@@ -404,8 +538,7 @@ const GENERATORS = {
     });
     return (t) => {
       stopSched();
-      r1.stop(t);
-      r2.stop(t);
+      stopRain(t);
     };
   },
 };
@@ -455,22 +588,58 @@ export const sound = {
   // Trueno lejano (sólo suena si el ambiente es la lluvia de la ciudad).
   thunder() {
     if (current.mode !== 'city' || !ctx) return;
+    thunderRoll(ambBus, audio().currentTime + 0.8 + Math.random() * 1.4, 1);
+  },
+
+  // Pasada de autos: `times` son los segundos (desde ahora) en que cada auto cruza frente a la suite.
+  // Motor agudo que sube al acercarse y cae al alejarse (efecto Doppler), de izquierda a derecha.
+  race(times) {
+    if (current.mode !== 'paddock' || !ctx) return;
     const c = audio();
-    const at = c.currentTime + 0.8 + Math.random() * 1.4;
-    const src = c.createBufferSource();
-    src.buffer = noise('brown', 4);
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(320, at);
-    lp.frequency.exponentialRampToValueAtTime(90, at + 3.5);
-    const g = c.createGain();
-    g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.9, at + 0.25);
-    g.gain.exponentialRampToValueAtTime(0.25, at + 1.2);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 4);
-    src.connect(lp).connect(g).connect(ambBus);
-    src.start(at);
-    src.stop(at + 4.1);
+    const now = c.currentTime;
+    times.forEach((t, i) => {
+      const mid = now + t;
+      const at = Math.max(now + 0.02, mid - 1.3);
+      const end = mid + 1.6;
+      const f = 300 + i * 18 + Math.random() * 30;
+      const pan = c.createStereoPanner();
+      pan.pan.setValueAtTime(-0.9, at);
+      pan.pan.linearRampToValueAtTime(0.9, end);
+      const glass = c.createBiquadFilter();
+      glass.type = 'lowpass';
+      glass.frequency.setValueAtTime(1200, at);
+      glass.frequency.linearRampToValueAtTime(2600, mid);
+      glass.frequency.linearRampToValueAtTime(900, end);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.2, mid - 0.05);
+      g.gain.exponentialRampToValueAtTime(0.06, mid + 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
+      g.connect(glass).connect(pan).connect(ambBus);
+      for (const [type, mult, level] of [['sawtooth', 1, 0.6], ['square', 2.01, 0.25], ['sawtooth', 0.5, 0.5]]) {
+        const o = c.createOscillator();
+        o.type = type;
+        o.frequency.setValueAtTime(f * mult * 1.12, at);
+        o.frequency.linearRampToValueAtTime(f * mult * 1.2, mid - 0.08);
+        o.frequency.exponentialRampToValueAtTime(f * mult * 0.8, mid + 0.12);
+        o.frequency.linearRampToValueAtTime(f * mult * 0.74, end);
+        const og = c.createGain();
+        og.gain.value = level;
+        o.connect(og).connect(g);
+        o.start(at);
+        o.stop(end + 0.05);
+      }
+      burst(g, { at: mid - 0.4, dur: 1.1, type: 'pink', filter: 'bandpass', freq: 900, q: 0.6, peak: 0.5, attack: 0.35 });
+    });
+    // la tribuna se entusiasma con la pasada
+    const crowd = current.crowd;
+    if (crowd) {
+      const t0 = Math.max(now, now + times[0] - 0.5);
+      crowd.gain.cancelScheduledValues(t0);
+      crowd.gain.setValueAtTime(0.7, t0);
+      crowd.gain.linearRampToValueAtTime(1.8, t0 + 1);
+      crowd.gain.linearRampToValueAtTime(0.7, t0 + 6);
+    }
   },
 
   get ambient() {
@@ -492,6 +661,7 @@ export const sound = {
     }
     current.mode = mode;
     current.stop = null;
+    current.crowd = null;
     const gen = GENERATORS[mode];
     if (!gen) return;
     const gain = c.createGain();

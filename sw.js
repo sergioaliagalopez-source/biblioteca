@@ -2,7 +2,7 @@
 // Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
 // viejos con nuevos); sin conexión usa la copia guardada.
 // Al publicar una versión nueva, sube el número de VERSION.
-const VERSION = 'biblioteca-v4';
+const VERSION = 'biblioteca-v5';
 
 const SHELL = [
   './',
@@ -32,6 +32,7 @@ const SHELL = [
   'themes/mansion.jpg',
   'themes/jazz.jpg',
   'themes/atico.jpg',
+  'themes/paddock.jpg',
 ];
 
 // Recursos de otros sitios que conviene guardar al usarse: fuentes y tablas de PDF.js.

@@ -121,6 +121,68 @@ const CITY = /* glsl */ `
   }
 `;
 
+// Circuito de día: cielo con nubes, colinas, la tribuna principal llena de público que se mueve
+// (mucho rojo), banderas que flamean en el techo, flashes de cámaras y un helicóptero de TV.
+const PADDOCK = /* glsl */ `
+  uniform float uTime;
+  uniform float uAspect;
+  varying vec2 vUv;
+  ${NOISE}
+  void main() {
+    vec2 uv = vUv;
+    vec3 col = mix(vec3(0.66, 0.80, 0.95), vec3(0.27, 0.50, 0.86), smoothstep(0.45, 1.0, uv.y));
+    float c = fbm(vec2(uv.x * 3.0 + uTime * 0.008, uv.y * 6.0));
+    col = mix(col, vec3(1.0), smoothstep(0.55, 0.85, c) * 0.75 * smoothstep(0.5, 0.66, uv.y));
+    float hills = 0.36 + 0.025 * fbm(vec2(uv.x * 8.0, 3.0));
+    if (uv.y < hills) col = mix(vec3(0.30, 0.44, 0.26), vec3(0.20, 0.32, 0.19), fbm(uv * 40.0));
+    float standBot = 0.16, standTop = 0.32;
+    if (uv.y > standBot && uv.y < standTop) {
+      float ty = (uv.y - standBot) * 100.0;
+      vec2 seat = vec2(floor(uv.x * 900.0), floor(ty));
+      float h = hash(seat);
+      vec3 crowd = h < 0.45 ? vec3(0.80, 0.06, 0.08) : h < 0.58 ? vec3(0.96, 0.84, 0.18) : h < 0.74 ? vec3(0.95) : h < 0.88 ? vec3(0.10, 0.10, 0.12) : vec3(0.20, 0.30, 0.72);
+      // la gente se mueve, y cada tanto pasa una "ola"
+      float bob = 0.6 + 0.4 * (0.5 + 0.5 * sin(uTime * 3.0 + seat.x * 0.7 + seat.y * 1.3));
+      float ola = exp(-pow((fract(uv.x * 0.6 - uTime * 0.04) - 0.5) * 18.0, 2.0));
+      crowd = mix(vec3(0.42, 0.12, 0.12), crowd, 0.55) * (bob + ola * 0.5);
+      col = mix(vec3(0.24, 0.24, 0.27), crowd, step(0.3, fract(ty)));
+      col *= 0.62 + 0.38 * (1.0 - (uv.y - standBot) / (standTop - standBot));
+      col += step(0.9988, hash(seat + floor(uTime * 9.0))) * 1.6;
+    }
+    if (uv.y >= standTop && uv.y < standTop + 0.022) col = vec3(0.86, 0.87, 0.9) - 0.1 * step(0.5, fract(uv.x * 40.0));
+    // banderas sobre el techo
+    float fid = floor(uv.x * 26.0);
+    float fx = fract(uv.x * 26.0);
+    if (abs(fx - 0.5) < 0.006 && uv.y > standTop + 0.022 && uv.y < standTop + 0.075) col = vec3(0.88);
+    vec2 fuv = vec2((fx - 0.5) / 0.2, (uv.y - (standTop + 0.05)) / 0.022);
+    if (fuv.x > 0.0 && fuv.x < 1.0) {
+      float wav = sin(fuv.x * 6.0 - uTime * 5.0 + fid) * 0.18 * fuv.x;
+      float yy = fuv.y + wav;
+      if (yy > 0.0 && yy < 1.0) {
+        float k = mod(fid, 3.0);
+        vec3 fc = k < 1.0 ? vec3(0.86, 0.05, 0.07) : k < 2.0 ? vec3(0.96, 0.82, 0.1) : vec3(0.96);
+        col = fc * (0.78 + 0.22 * sin(fuv.x * 6.0 - uTime * 5.0 + fid));
+      }
+    }
+    // muro y reja de contención bajo la tribuna
+    if (uv.y <= standBot) {
+      col = uv.y < 0.12 ? vec3(0.58, 0.58, 0.6) : vec3(0.32, 0.46, 0.29);
+      col = mix(col, vec3(0.18), step(0.96, fract(uv.x * 220.0)) * step(0.12, uv.y));
+    }
+    // helicóptero de TV cruzando el cielo
+    vec2 hp = vec2(fract(uTime * 0.012) * 1.4 - 0.2, 0.5 + 0.015 * sin(uTime * 0.3));
+    vec2 d = (uv - hp) * vec2(uAspect, 1.0);
+    if (length(d * vec2(1.0, 2.2)) < 0.012) col = vec3(0.12);
+    if (abs(d.y - 0.009) < 0.0012 && abs(d.x) < 0.03) col = vec3(0.2);
+    col += vec3(1.0, 0.1, 0.1) * step(length(d - vec2(0.014, 0.0)), 0.003) * step(0.5, fract(uTime * 1.5));
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+export function paddockBackdrop(w = 80, h = 34) {
+  return backdrop(PADDOCK, { uTime: { value: 0 }, uAspect: { value: w / h } }, w, h);
+}
+
 function backdrop(fragmentShader, uniforms, w, h) {
   const mat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader, uniforms, fog: false, depthWrite: true });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);

@@ -37,9 +37,10 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   (Los PDF escaneados como imagen no tienen texto, así que no se pueden resaltar.)
 - **Buscar**: la lupa de arriba (o `Ctrl+K`, o la tecla `/`). Escribe parte del título, el autor o la categoría
   (sin importar tildes); con `↑` `↓` eliges y `Enter` abre el libro. Sin escribir nada, muestra los leídos recientemente.
-- **Fondos**: botón de abajo a la derecha. Cuatro ambientes, cada uno con su sonido:
-  **Biblioteca clásica** (chimenea, incluida), **Mansión frente al mar** (olas), **Salón de jazz** (jazz suave)
-  y **Ático moderno** (lluvia y piano, con truenos). Precio previsto 0,99 US$ cada uno; gratis mientras la app está en prueba
+- **Fondos**: botón de abajo a la derecha. Cinco ambientes, cada uno con su sonido:
+  **Biblioteca clásica** (chimenea, incluida), **Mansión frente al mar** (olas), **Salón de jazz** (jazz suave),
+  **Ático moderno** (lluvia tranquila y piano, con relámpagos y truenos) y **Paddock Club** (suite sobre la recta:
+  cada 45 segundos se encienden los semáforos y pasan los autos; cascos, autos a escala y un traje enmarcado). Precio previsto 0,99 US$ cada uno; gratis mientras la app está en prueba
   (`FREE_TRIAL` en `js/themes.js`).
 - **Sonido**: ícono de parlante arriba (y en la barra del lector). Volumen general, ambiente y hojas/cinta;
   y el ambiente: el del fondo, o chimenea, olas, jazz, lluvia y piano, lluvia o silencio.

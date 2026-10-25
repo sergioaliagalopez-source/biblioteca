@@ -36,6 +36,14 @@ export const THEMES = [
     price: 0.99,
     preview: 'themes/atico.jpg',
   },
+  {
+    id: 'paddock',
+    name: 'Paddock Club',
+    mood: 'Rojo Maranello, cascos y autos pasando por la recta',
+    sound: 'paddock',
+    price: 0.99,
+    preview: 'themes/paddock.jpg',
+  },
 ];
 
 // Sonidos de ambiente que se pueden elegir en los ajustes de sonido.
@@ -45,6 +53,7 @@ export const AMBIENTS = {
   ocean: 'Olas del mar',
   jazz: 'Jazz suave',
   city: 'Lluvia y piano',
+  paddock: 'Motores y tribuna',
   rain: 'Lluvia',
   off: 'Silencio',
 };

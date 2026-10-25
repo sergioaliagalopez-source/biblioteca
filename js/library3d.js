@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { spineCanvas, plaqueCanvas, decorSpineCanvas, paintingCanvas, dustSprite, seeded, hashStr, PALETTE, clamp } from './textures.js';
-import { BC, FRONT_Z, tex, computeBays, SCENES, sceneMaterials, pagesMaterial } from './scenes.js';
+import { BC, FRONT_Z, tex, computeBays, SCENES, sceneMaterials, pagesMaterial, LIVERIES, buildF1Car, buildHelmet, buildFramedSuit } from './scenes.js';
+import { checkerCanvas, wheelScreenCanvas } from './textures.js';
 
 const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
@@ -530,6 +531,137 @@ export class Library3D {
       this.spinners.push(platter);
       this.dynamic.push(platter.geometry, spindle.geometry, pivot.geometry, arm.geometry, knob.geometry, horn.geometry);
       g.userData.w = 0.44;
+      return g;
+    }
+    // ---- Memorabilia de carreras (Paddock Club) ----
+    const livery = () => LIVERIES[(this.decorUsed.livery = ((this.decorUsed.livery ?? -1) + 1) % LIVERIES.length)];
+    if (kind === 'helmet' && maxW > 0.24) {
+      const h = buildHelmet(livery(), this.dynamic, this.env);
+      h.rotation.y = (rnd() - 0.5) * 0.9;
+      g.add(h);
+      g.userData.w = 0.24;
+      return g;
+    }
+    if (kind === 'modelcar' && maxW > 0.46) {
+      // Auto a escala sobre una base, dentro de una vitrina de acrílico.
+      const car = buildF1Car(livery(), this.dynamic);
+      car.scale.setScalar(0.075);
+      car.position.y = 0.035;
+      car.rotation.y = 0.5 + (rnd() - 0.5) * 0.3;
+      const base = new THREE.Mesh(this.unitBox, this.mat.woodDark);
+      base.scale.set(0.44, 0.035, 0.24);
+      base.position.y = 0.0175;
+      const caseBox = new THREE.Mesh(this.unitBox, this.mat.acrylic);
+      caseBox.scale.set(0.44, 0.13, 0.24);
+      caseBox.position.y = 0.035 + 0.065;
+      g.add(base, car, caseBox);
+      g.userData.w = 0.46;
+      return g;
+    }
+    if (kind === 'trophy' && maxW > 0.2) {
+      // Copa dorada con asas.
+      const pts = [[0, 0], [0.05, 0], [0.05, 0.02], [0.02, 0.04], [0.015, 0.11], [0.04, 0.13], [0.065, 0.17], [0.075, 0.24], [0.07, 0.25], [0, 0.18]].map(([a, b]) => new THREE.Vector2(a, b));
+      const cup = new THREE.Mesh(new THREE.LatheGeometry(pts, 40), this.mat.gold);
+      cup.position.y = 0.05;
+      const base = new THREE.Mesh(this.unitBox, this.mat.woodDark);
+      base.scale.set(0.11, 0.05, 0.11);
+      base.position.y = 0.025;
+      const handleGeo = new THREE.TorusGeometry(0.035, 0.006, 8, 20, Math.PI * 1.2);
+      for (const s of [-1, 1]) {
+        const handle = new THREE.Mesh(handleGeo, this.mat.gold);
+        handle.position.set(s * 0.075, 0.25, 0);
+        handle.rotation.z = s > 0 ? -1.1 : Math.PI + 1.1 - Math.PI * 0.2;
+        g.add(handle);
+      }
+      cup.castShadow = true;
+      g.add(base, cup);
+      this.dynamic.push(cup.geometry, handleGeo);
+      g.userData.w = 0.2;
+      return g;
+    }
+    if (kind === 'wheel' && maxW > 0.32) {
+      // Volante de carreras en su soporte, con la pantalla encendida.
+      const wheel = new THREE.Group();
+      const body = new THREE.Mesh(this.unitBox, this.mat.wood);
+      body.scale.set(0.24, 0.13, 0.035);
+      const gripGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.13, 12);
+      for (const s of [-1, 1]) {
+        const grip = new THREE.Mesh(gripGeo, this.mat.rubber);
+        grip.position.set(s * 0.135, -0.005, 0);
+        wheel.add(grip);
+      }
+      const screenTex = tex(wheelScreenCanvas());
+      const screenMat = new THREE.MeshStandardMaterial({ map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.9 });
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.055), screenMat);
+      screen.position.z = 0.019;
+      const btnGeo = new THREE.CylinderGeometry(0.009, 0.009, 0.01, 12);
+      [[-0.085, 0.035, 0xe33], [0.085, 0.035, 0xf4d000], [-0.085, -0.04, 0x36f], [0.085, -0.04, 0x1ec31e]].forEach(([x, y, col]) => {
+        const m = new THREE.MeshStandardMaterial({ color: col, roughness: 0.4 });
+        const b = new THREE.Mesh(btnGeo, m);
+        b.rotation.x = Math.PI / 2;
+        b.position.set(x, y, 0.02);
+        wheel.add(b);
+        this.dynamic.push(m);
+      });
+      wheel.add(body, screen);
+      wheel.position.set(0, 0.17, 0);
+      wheel.rotation.x = -0.25;
+      const stand = new THREE.Mesh(this.unitBox, this.mat.brass);
+      stand.scale.set(0.02, 0.12, 0.02);
+      stand.position.y = 0.06;
+      const foot = new THREE.Mesh(this.unitBox, this.mat.woodDark);
+      foot.scale.set(0.16, 0.015, 0.1);
+      foot.position.y = 0.0075;
+      g.add(foot, stand, wheel);
+      this.dynamic.push(gripGeo, btnGeo, screen.geometry, screenTex, screenMat);
+      g.userData.w = 0.32;
+      return g;
+    }
+    if (kind === 'tyres' && maxW > 0.2) {
+      // Neumáticos en miniatura apilados, con su franja de color.
+      const tyreGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.06, 28);
+      const ringGeo = new THREE.TorusGeometry(0.055, 0.004, 6, 28);
+      [this.mat.red, this.mat.gold, this.mat.porcelain].forEach((stripeMat, i) => {
+        const t = new THREE.Mesh(tyreGeo, this.mat.rubber);
+        t.position.set(i === 2 ? 0.05 : 0, 0.03 + (i === 2 ? 0 : i * 0.061), i === 2 ? 0.02 : 0);
+        if (i === 2) t.position.x = 0.09;
+        const r = new THREE.Mesh(ringGeo, stripeMat);
+        r.rotation.x = Math.PI / 2;
+        r.position.copy(t.position).y += 0.0305;
+        t.castShadow = true;
+        g.add(t, r);
+      });
+      g.children.forEach((c) => (c.position.x -= 0.045));
+      this.dynamic.push(tyreGeo, ringGeo);
+      g.userData.w = 0.26;
+      return g;
+    }
+    if (kind === 'suit' && maxW > 0.38) {
+      const s = buildFramedSuit(0.32, 0.46, this.dynamic);
+      s.position.set(0, 0.23, -0.05);
+      s.rotation.x = -0.12;
+      g.add(s);
+      g.userData.w = 0.38;
+      return g;
+    }
+    if (kind === 'flag' && maxW > 0.24) {
+      // Bandera a cuadros en su mástil, con un leve ondeo.
+      const ftex = tex(checkerCanvas());
+      const fmat = new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.7, side: THREE.DoubleSide });
+      const geo = new THREE.PlaneGeometry(0.22, 0.16, 12, 1);
+      const p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin((p.getX(i) + 0.11) * 22) * 0.012);
+      geo.computeVertexNormals();
+      const flag = new THREE.Mesh(geo, fmat);
+      flag.position.set(0.11, 0.36, 0);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.45, 8), this.mat.brass);
+      pole.position.y = 0.225;
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.02, 16), this.mat.woodDark);
+      foot.position.y = 0.01;
+      g.add(foot, pole, flag);
+      g.children.forEach((c) => (c.position.x -= 0.08));
+      this.dynamic.push(ftex, fmat, geo, pole.geometry, foot.geometry);
+      g.userData.w = 0.26;
       return g;
     }
     if (kind === 'sculpture' && maxW > 0.22) {

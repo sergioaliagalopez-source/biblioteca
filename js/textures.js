@@ -421,6 +421,177 @@ export function vinylCanvas() {
   return c;
 }
 
+// ---------- Paddock Club (carreras) ----------
+
+// Fibra de carbono: tejido en diagonal negro con reflejos.
+export function carbonCanvas() {
+  const S = 128;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  g.fillStyle = '#121214';
+  g.fillRect(0, 0, S, S);
+  const cell = 8;
+  for (let y = 0; y < S; y += cell) {
+    for (let x = 0; x < S; x += cell) {
+      const odd = ((x + y) / cell) % 2;
+      const grd = odd ? g.createLinearGradient(x, y, x + cell, y) : g.createLinearGradient(x, y, x, y + cell);
+      grd.addColorStop(0, '#1b1c1f');
+      grd.addColorStop(0.5, odd ? '#2c2e33' : '#26272b');
+      grd.addColorStop(1, '#151517');
+      g.fillStyle = grd;
+      g.fillRect(x, y, cell, cell);
+    }
+  }
+  return c;
+}
+
+// Pista vista de costado: techo de garajes, muro de boxes, asfalto, pianos y césped.
+export function trackCanvas() {
+  const w = 512, h = 512;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const rnd = seeded(14);
+  const band = (y0, y1, color) => {
+    g.fillStyle = color;
+    g.fillRect(0, y0, w, y1 - y0);
+  };
+  // de cerca (abajo del lienzo) hacia lejos (arriba): techo de boxes, calle de boxes, asfalto, piano, césped
+  band(0, 60, '#4f7a3a'); // césped lejano
+  band(60, 74, '#ffffff');
+  for (let x = 0; x < w; x += 32) { g.fillStyle = '#d01616'; g.fillRect(x, 60, 16, 14); } // piano
+  band(74, 330, '#3a3b3e'); // asfalto
+  band(78, 82, '#e9e9e9'); // línea blanca
+  band(322, 326, '#e9e9e9');
+  band(330, 350, '#8d8f93'); // muro de boxes (base)
+  band(350, 420, '#55575b'); // calle de boxes
+  band(420, 512, '#9a9a96'); // techo de garajes
+  grain(g, w, h, 0.08, rnd);
+  // marcas de goma
+  g.globalAlpha = 0.15;
+  for (let i = 0; i < 8; i++) {
+    g.fillStyle = '#111';
+    g.fillRect(0, 150 + i * 18 + rnd() * 8, w, 3);
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+
+// Pintura de casco: color base, franjas y número (se envuelve alrededor de la esfera).
+export function helmetCanvas({ base = '#c8102e', stripe = '#f4d000', accent = '#ffffff', number = '16' } = {}) {
+  const w = 512, h = 256;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  g.fillStyle = base;
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = accent;
+  g.fillRect(0, h * 0.42, w, h * 0.07);
+  g.fillStyle = stripe;
+  g.fillRect(0, h * 0.5, w, h * 0.05);
+  g.fillRect(w * 0.47, 0, w * 0.06, h * 0.42);
+  g.fillStyle = accent;
+  g.font = `700 ${h * 0.22}px "Helvetica Neue", Arial, sans-serif`;
+  g.textAlign = 'center';
+  g.fillText(number, w * 0.25, h * 0.36);
+  g.fillText(number, w * 0.75, h * 0.36);
+  const sheen = g.createLinearGradient(0, 0, 0, h);
+  sheen.addColorStop(0, 'rgba(255,255,255,0.25)');
+  sheen.addColorStop(0.4, 'rgba(255,255,255,0)');
+  sheen.addColorStop(1, 'rgba(0,0,0,0.3)');
+  g.fillStyle = sheen;
+  g.fillRect(0, 0, w, h);
+  return c;
+}
+
+// Traje de piloto rojo, enmarcado como trofeo.
+export function suitCanvas({ base = '#c8102e', trim = '#ffffff', patch = '#f4d000', number = '16' } = {}) {
+  const w = 300, h = 420;
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, '#1d1d20');
+  bg.addColorStop(1, '#0d0d0f');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = base;
+  g.beginPath();
+  // cuello, hombros y brazos abiertos
+  g.moveTo(130, 40); g.lineTo(170, 40); g.lineTo(178, 58);
+  g.lineTo(240, 70); g.lineTo(285, 190); g.lineTo(262, 200); g.lineTo(222, 120);
+  g.lineTo(212, 230); g.lineTo(206, 400); g.lineTo(160, 400); g.lineTo(150, 250);
+  g.lineTo(140, 400); g.lineTo(94, 400); g.lineTo(88, 230);
+  g.lineTo(78, 120); g.lineTo(38, 200); g.lineTo(15, 190); g.lineTo(60, 70); g.lineTo(122, 58);
+  g.closePath();
+  g.fill();
+  // cinturón, franjas, parches y número
+  g.fillStyle = '#111';
+  g.fillRect(88, 222, 124, 14);
+  g.fillStyle = trim;
+  g.fillRect(146, 58, 8, 164);
+  g.fillRect(94, 300, 8, 96);
+  g.fillRect(198, 300, 8, 96);
+  g.fillStyle = patch;
+  g.fillRect(170, 92, 26, 18);
+  g.fillRect(104, 150, 30, 14);
+  g.fillStyle = trim;
+  g.font = `700 34px "Helvetica Neue", Arial, sans-serif`;
+  g.textAlign = 'center';
+  g.fillText(number, 192, 175);
+  // guantes
+  g.fillStyle = '#e9e9e9';
+  g.beginPath(); g.arc(274, 200, 13, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(26, 200, 13, 0, Math.PI * 2); g.fill();
+  return c;
+}
+
+export function checkerCanvas() {
+  const c = makeCanvas(256, 192);
+  const g = c.getContext('2d');
+  const s = 32;
+  for (let y = 0; y < 192; y += s) for (let x = 0; x < 256; x += s) {
+    g.fillStyle = ((x + y) / s) % 2 ? '#111' : '#f4f4f4';
+    g.fillRect(x, y, s, s);
+  }
+  return c;
+}
+
+// Pantalla del volante: barras de cambios y datos de carrera.
+export function wheelScreenCanvas() {
+  const c = makeCanvas(128, 64);
+  const g = c.getContext('2d');
+  g.fillStyle = '#050608';
+  g.fillRect(0, 0, 128, 64);
+  const leds = ['#1ec31e', '#1ec31e', '#1ec31e', '#1ec31e', '#e33', '#e33', '#e33', '#36f', '#36f'];
+  leds.forEach((col, i) => { g.fillStyle = col; g.fillRect(8 + i * 12.5, 5, 9, 6); });
+  g.fillStyle = '#f4d000';
+  g.font = '700 26px "Helvetica Neue", Arial, sans-serif';
+  g.textAlign = 'center';
+  g.fillText('7', 64, 46);
+  g.fillStyle = '#9ad';
+  g.font = '600 10px Arial';
+  g.fillText('1:18.437', 30, 56);
+  g.fillText('P1', 104, 56);
+  return c;
+}
+
+// Cartel del muro de boxes (sin marcas).
+export function bannerCanvas() {
+  const c = makeCanvas(1024, 64);
+  const g = c.getContext('2d');
+  const panels = ['#c8102e', '#111111', '#f2f2f2', '#c8102e', '#1a1a1a', '#f4d000'];
+  panels.forEach((col, i) => {
+    g.fillStyle = col;
+    g.fillRect((i * 1024) / panels.length, 0, 1024 / panels.length, 64);
+  });
+  g.font = '700 30px "Helvetica Neue", Arial, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  ['PADDOCK', 'GRAND PRIX', 'PIT LANE', 'PADDOCK', 'START', 'GRAND PRIX'].forEach((t, i) => {
+    g.fillStyle = panels[i] === '#f2f2f2' || panels[i] === '#f4d000' ? '#111' : '#fff';
+    g.fillText(t, ((i + 0.5) * 1024) / panels.length, 33);
+  });
+  return c;
+}
+
 // ---------- Placa de bronce grabada ----------
 
 export function plaqueCanvas(text, style = 'brass') {

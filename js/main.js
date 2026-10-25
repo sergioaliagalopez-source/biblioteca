@@ -60,6 +60,7 @@ async function boot() {
     lib = new Library3D($('#scene'), {
       theme: state.theme,
       onThunder: () => sound.thunder(),
+      onRace: (times) => sound.race(times),
       onHover: showTooltip,
       onOpen: openBook,
       onContext: bookMenu,
@@ -72,6 +73,8 @@ async function boot() {
   }
   refreshShelf();
   bindUI();
+  // Con ?debug en la dirección, deja la escena a mano desde la consola (para probar).
+  if (new URLSearchParams(location.search).has('debug')) window.biblioteca = { lib, state, reader, sound };
   updateThemeButton();
   updateSoundIcons();
   updateCloud();
