@@ -2,7 +2,7 @@
 // Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
 // viejos con nuevos); sin conexión usa la copia guardada.
 // Al publicar una versión nueva, sube el número de VERSION.
-const VERSION = 'biblioteca-v5';
+const VERSION = 'biblioteca-v6';
 
 const SHELL = [
   './',
@@ -28,6 +28,7 @@ const SHELL = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',
+  'icons/favicon-32.png',
   'themes/clasica.jpg',
   'themes/mansion.jpg',
   'themes/jazz.jpg',
