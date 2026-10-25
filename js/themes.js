@@ -44,7 +44,7 @@ export const THEMES = [
   },
   {
     id: 'tierra',
-    name: 'Palco de tierra batida',
+    name: 'Tennis',
     mood: 'París, arcilla roja y trofeos de campeón',
     sound: 'paris',
     price: 0.99,

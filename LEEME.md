@@ -43,7 +43,7 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   De pago, 0,99 US$ cada uno:
   - **Paddock Club**: suite sobre la recta. Cada 45 segundos se encienden los semáforos y pasan los autos.
     Tiene cascos, autos a escala y un traje enmarcado.
-  - **Palco de tierra batida**: palco vacío frente a una cancha de arcilla en París.
+  - **Tennis**: palco vacío frente a una cancha de arcilla en París.
     En el cielo pasan globo, avión y pájaros. Un cuidador pasa la alfombra por la cancha y cada tanto se encienden los aspersores.
     Tiene pelotas firmadas, raquetas, copas de campeón de otros años y un tubo de pelotas.
 
@@ -87,7 +87,7 @@ Lemon Squeezy cobra con tarjeta o PayPal en todo el mundo, se ocupa de los impue
 banco o a PayPal. Comisión aproximada: 5 % + 0,50 US$ por venta.
 
 1. Crea una cuenta en lemonsqueezy.com y una tienda. Completa los datos de pago (Settings → Payouts).
-2. Crea un producto por fondo, «Paddock Club» y «Palco de tierra batida», a 0,99 US$.
+2. Crea un producto por fondo, «Paddock Club» y «Tennis», a 0,99 US$.
    En cada uno activa **Generate license keys**, con un límite de activaciones de 5.
 3. Copia en `js/store.js`, dentro de `PAYMENTS`:
    - `storeId`: el número de la tienda (Settings → Stores).
