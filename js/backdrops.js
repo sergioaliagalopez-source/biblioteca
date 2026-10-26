@@ -181,88 +181,72 @@ const PADDOCK = /* glsl */ `
 
 // Estadio de tenis en París, de tarde y vacío: tribunas verdes, techo con banderas, marcador,
 // árboles, la torre a lo lejos; en el cielo nubes, bandadas de pájaros, un globo y un avión con su estela.
-const TIERRA = /* glsl */ `
+// Cielo de París sobre el estadio de tenis (en metros del plano, que está a ~285 m): nubes, avión con estela,
+// globo aerostático, bandada de pájaros y la torre a lo lejos asomando sobre el techo.
+const TENNIS_SKY = /* glsl */ `
   uniform float uTime;
-  uniform float uAspect;
+  uniform vec2 uSize;
   varying vec2 vUv;
   ${NOISE}
-  float bird(vec2 p, float t) {
-    // una "v" que aletea
-    float flap = 0.4 + 0.35 * sin(t * 9.0);
-    return smoothstep(0.0028, 0.0012, abs(p.y - abs(p.x) * flap)) * step(abs(p.x), 0.006);
+  float bird(vec2 q, float t) {
+    float flap = 0.35 + 0.3 * sin(t * 8.0);
+    return smoothstep(0.16, 0.05, abs(q.y - abs(q.x) * flap)) * step(abs(q.x), 0.7);
   }
   void main() {
-    vec2 uv = vUv;
-    vec3 col = mix(vec3(0.78, 0.86, 0.95), vec3(0.42, 0.62, 0.88), smoothstep(0.38, 1.0, uv.y));
-    float c = fbm(vec2(uv.x * 2.4 + uTime * 0.006, uv.y * 5.0 - uTime * 0.002));
-    col = mix(col, vec3(1.0, 0.99, 0.97), smoothstep(0.52, 0.82, c) * 0.8 * smoothstep(0.4, 0.6, uv.y));
+    vec2 P = vec2((vUv.x - 0.5) * uSize.x, vUv.y * uSize.y - 6.0);
+    float t = uTime;
+    vec3 col = mix(vec3(0.86, 0.89, 0.92), vec3(0.38, 0.58, 0.86), smoothstep(5.0, 95.0, P.y));
+    col += vec3(0.08, 0.05, 0.0) * smoothstep(260.0, 0.0, length(P - vec2(-320.0, 70.0)));
+    // nubes
+    float c = fbm(vec2(P.x * 0.008 + t * 0.003, P.y * 0.022));
+    col = mix(col, vec3(1.0, 0.99, 0.97), smoothstep(0.5, 0.78, c) * 0.85);
+    // la torre, lejos
+    vec2 tq = P - vec2(-110.0, 0.0);
+    float yn = tq.y / 52.0;
+    if (yn > 0.0 && yn < 1.0) {
+      float hw = 9.0 * pow(1.0 - yn, 2.4) + 0.35;
+      float body = step(abs(tq.x), hw);
+      float lattice = 0.75 + 0.25 * step(0.5, fract((tq.y + abs(tq.x) * 1.4) * 0.9));
+      float deck = step(abs(yn - 0.27), 0.012) * step(abs(tq.x), hw + 1.2) + step(abs(yn - 0.56), 0.01) * step(abs(tq.x), hw + 0.6);
+      col = mix(col, vec3(0.5, 0.54, 0.6) * lattice, max(body, deck) * 0.9);
+    }
+    if (tq.y >= 52.0 && tq.y < 57.0 && abs(tq.x) < 0.18) col = mix(col, vec3(0.5, 0.54, 0.6), 0.9);
     // avión con su estela, cruzando muy despacio
-    float px = fract(uTime * 0.008) * 1.6 - 0.3;
-    vec2 pp = vec2(px, 0.78 + px * 0.05);
-    float trail = smoothstep(0.0025, 0.0, abs(uv.y - (0.78 + uv.x * 0.05))) * step(uv.x, px) * smoothstep(px - 0.5, px, uv.x);
-    col = mix(col, vec3(1.0), trail * 0.7);
-    col = mix(col, vec3(0.35), smoothstep(0.004, 0.002, length((uv - pp) * vec2(uAspect, 1.0) * vec2(0.5, 1.0))));
-    // globo aerostático que deriva
-    vec2 bp = vec2(fract(uTime * 0.004 + 0.3) * 1.3 - 0.15, 0.6 + 0.02 * sin(uTime * 0.2));
-    vec2 bd = (uv - bp) * vec2(uAspect, 1.0);
-    if (length(bd * vec2(1.0, 0.85)) < 0.03 && bd.y > -0.02) {
-      float stripes = step(0.5, fract(atan(bd.x, 0.03) * 3.0));
-      col = mix(vec3(0.9, 0.42, 0.18), vec3(0.16, 0.42, 0.28), stripes);
+    float px = mod(t * 1.4, 900.0) - 450.0;
+    float py = 41.0 + px * 0.02;
+    float trailY = 41.0 + P.x * 0.02;
+    float trail = smoothstep(0.35, 0.0, abs(P.y - trailY)) * step(P.x, px - 1.0) * smoothstep(px - 170.0, px - 2.0, P.x);
+    col = mix(col, vec3(1.0), trail * 0.75);
+    vec2 aq = (P - vec2(px, py)) * vec2(1.0, 3.2);
+    col = mix(col, vec3(0.32, 0.34, 0.38), smoothstep(1.0, 0.7, length(aq)));
+    // globo aerostático que deriva con el viento
+    vec2 B = vec2(mod(t * 0.32 + 140.0, 700.0) - 350.0, 31.0 + 1.6 * sin(t * 0.15));
+    vec2 q = P - B;
+    float r = 5.0;
+    float env = step(length(q * vec2(1.0, 0.9) - vec2(0.0, 0.6)), r) * step(-2.6, q.y);
+    float coneW = (q.y + 6.2) * 0.62;
+    float cone = step(q.y, -2.4) * step(-5.4, q.y) * step(abs(q.x), coneW);
+    if (env + cone > 0.0) {
+      float wx = q.x / max(sqrt(max(r * r - q.y * q.y * 0.7, 1.0)), 1.0);
+      float gore = floor((asin(clamp(wx, -1.0, 1.0)) / 3.1416 + 0.5) * 8.0);
+      vec3 gc = mod(gore, 3.0) < 1.0 ? vec3(0.88, 0.42, 0.16) : (mod(gore, 3.0) < 2.0 ? vec3(0.12, 0.42, 0.27) : vec3(0.95, 0.92, 0.84));
+      col = gc * (1.05 - 0.4 * wx * wx) * (0.9 + 0.12 * smoothstep(-4.0, 4.0, q.y - q.x));
     }
-    if (abs(bd.x) < 0.006 && bd.y < -0.032 && bd.y > -0.044) col = vec3(0.35, 0.22, 0.12);
+    if (abs(q.x) < 0.8 && q.y < -6.4 && q.y > -7.6) col = vec3(0.36, 0.23, 0.13);
+    if (q.y < -5.3 && q.y > -6.4 && (abs(q.x - (0.7 + (q.y + 5.3) * 0.0)) < 0.07 || abs(q.x + 0.7) < 0.07)) col = vec3(0.3, 0.25, 0.2);
     // bandada de pájaros
-    for (int i = 0; i < 5; i++) {
+    vec2 F = vec2(mod(t * 2.6 + 300.0, 800.0) - 400.0, 26.0 + 3.0 * sin(t * 0.2));
+    for (int i = 0; i < 7; i++) {
       float fi = float(i);
-      vec2 b0 = vec2(fract(uTime * 0.02 + 0.1) * 1.4 - 0.2 - fi * 0.012, 0.66 + abs(fi - 2.0) * 0.008);
-      col = mix(col, vec3(0.15), bird((uv - b0) * vec2(uAspect, 1.0), uTime + fi));
+      vec2 o = vec2(-fi * 2.4, abs(fi - 3.0) * 1.1 + sin(t * 0.7 + fi) * 0.3);
+      col = mix(col, vec3(0.16), bird(P - F - o, t + fi * 0.7));
     }
-    // la torre, lejos, detrás del estadio
-    float tx = abs(uv.x - 0.16) * uAspect;
-    float ty = (uv.y - 0.33) / 0.2;
-    if (ty > 0.0 && ty < 1.0 && tx < 0.03 * pow(1.0 - ty, 2.2) + 0.002) col = mix(col, vec3(0.45, 0.42, 0.42), 0.85);
-    // árboles detrás de las tribunas
-    float trees = 0.33 + 0.03 * fbm(vec2(uv.x * 14.0, 2.0));
-    if (uv.y < trees) col = mix(vec3(0.20, 0.33, 0.19), vec3(0.14, 0.25, 0.14), fbm(uv * 60.0));
-    // tribunas vacías: butacas verdes en gradas
-    float standBot = 0.14, standTop = 0.3;
-    if (uv.y > standBot && uv.y < standTop) {
-      float ty2 = (uv.y - standBot) * 110.0;
-      float seat = step(0.22, fract(ty2)) * step(0.1, fract(uv.x * 650.0));
-      col = mix(vec3(0.16, 0.2, 0.17), vec3(0.08, 0.36, 0.22) * (0.85 + 0.15 * hash(vec2(floor(uv.x * 650.0), floor(ty2)))), seat);
-      col = mix(col, vec3(0.86, 0.85, 0.8), step(0.92, fract(ty2 / 4.0)) * 0.6); // escalones blancos cada 4 filas
-      col *= 0.7 + 0.3 * (1.0 - (uv.y - standBot) / (standTop - standBot));
-      // pasillos
-      col = mix(col, vec3(0.86, 0.85, 0.8), step(0.985, fract(uv.x * 9.0)));
-      // marcador sobre la tribuna central
-      vec2 sb = (uv - vec2(0.5, 0.255)) * vec2(uAspect, 1.0);
-      if (abs(sb.x) < 0.09 && abs(sb.y) < 0.022) {
-        col = vec3(0.05, 0.2, 0.13);
-        float clock = step(0.6, fract(uv.x * 160.0)) * step(abs(sb.y), 0.008) * step(abs(sb.x), 0.05);
-        col = mix(col, vec3(0.95, 0.75, 0.2), clock * (0.6 + 0.4 * step(0.5, fract(uTime))));
-      }
-    }
-    if (uv.y >= standTop && uv.y < standTop + 0.02) col = vec3(0.93, 0.92, 0.88) - 0.08 * step(0.5, fract(uv.x * 50.0));
-    // banderas en el borde del techo
-    float fid = floor(uv.x * 22.0);
-    float fx = fract(uv.x * 22.0);
-    if (abs(fx - 0.5) < 0.005 && uv.y > standTop + 0.02 && uv.y < standTop + 0.07) col = vec3(0.9);
-    vec2 fuv = vec2((fx - 0.5) / 0.2, (uv.y - (standTop + 0.045)) / 0.02);
-    if (fuv.x > 0.0 && fuv.x < 1.0) {
-      float wav = sin(fuv.x * 6.0 - uTime * 4.0 + fid) * 0.16 * fuv.x;
-      float yy = fuv.y + wav;
-      if (yy > 0.0 && yy < 1.0) {
-        vec3 fc = mod(fid, 2.0) < 1.0 ? (fuv.x < 0.33 ? vec3(0.1, 0.2, 0.55) : fuv.x < 0.66 ? vec3(0.96) : vec3(0.85, 0.1, 0.15)) : vec3(0.08, 0.36, 0.22);
-        col = fc * (0.82 + 0.18 * sin(fuv.x * 6.0 - uTime * 4.0 + fid));
-      }
-    }
-    // muro verde al pie de la tribuna
-    if (uv.y <= standBot) col = mix(vec3(0.07, 0.3, 0.19), vec3(0.75, 0.38, 0.22), step(uv.y, 0.1));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-export function tierraBackdrop(w = 110, h = 40) {
-  return backdrop(TIERRA, { uTime: { value: 0 }, uAspect: { value: w / h } }, w, h);
+export function tennisSky(w = 620, h = 140) {
+  return backdrop(TENNIS_SKY, { uTime: { value: 0 }, uSize: { value: new THREE.Vector2(w, h) } }, w, h);
 }
 
 export function paddockBackdrop(w = 80, h = 34) {

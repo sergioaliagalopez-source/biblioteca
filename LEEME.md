@@ -43,9 +43,12 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   De pago, 0,99 US$ cada uno:
   - **Paddock Club**: suite sobre la recta. Cada 45 segundos se encienden los semáforos y pasan los autos.
     Tiene cascos, autos a escala y un traje enmarcado.
-  - **Tennis**: palco vacío frente a una cancha de arcilla en París.
-    En el cielo pasan globo, avión y pájaros. Un cuidador pasa la alfombra por la cancha y cada tanto se encienden los aspersores.
-    Tiene pelotas firmadas, raquetas, copas de campeón de otros años y un tubo de pelotas.
+  - **Tennis**: palco alto de un estadio de París vacío, detrás de la línea de fondo, con la cancha de arcilla abajo, a lo largo.
+    Dos cuidadores pasan la alfombra por la arcilla (cada uno en su mitad), se encienden los aspersores,
+    la cámara aérea recorre la cancha colgada de sus cables, vuelan pájaros, ondean las banderas
+    y el marcador muestra la hora.
+    En la estantería: una vitrina con la copa de campeón, copas de plata, raquetas enmarcadas y cruzadas,
+    pelotas gigantes firmadas, tubos de pelotas, un frasco con arcilla de la cancha y afiches de época.
 
   Un fondo bloqueado muestra un candado. Al tocarlo ofrece **Comprar**, **Probar 30 segundos** o **pegar el código** recibido por email.
 - **Sonido**: ícono de parlante arriba (y en la barra del lector). Volumen general, ambiente y hojas/cinta;
