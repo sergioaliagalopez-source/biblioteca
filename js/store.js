@@ -14,7 +14,14 @@ export const PAYMENTS = {
     paddock: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/31df33b6-f676-439c-93ec-30c92124f8e0', productId: 1472475 },
     tierra: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/5104ab33-a7f4-47f6-ade3-1d33459e4843', productId: 1472501 },
   },
+  // Paquetes: un solo código desbloquea varios fondos. Se muestran cuando tienen enlace y número de producto.
+  bundles: [
+    { id: 'pack-paris', name: 'Paddock Club + Tennis', themes: ['paddock', 'tierra'], price: 2.99, checkout: '', productId: null },
+  ],
 };
+
+// Dónde ve el comprador sus pedidos y códigos (le llega un enlace por email para entrar).
+export const ORDERS_URL = 'https://app.lemonsqueezy.com/my-orders';
 
 // ---------- Modo desarrollador ----------
 // Todo desbloqueado para probar: automático en la PC (localhost, «Abrir Biblioteca.bat») y, en cualquier
@@ -65,7 +72,26 @@ export function checkoutUrl(themeId) {
   return PAYMENTS.products[themeId]?.checkout || '';
 }
 
-// Activa un código de licencia. Devuelve el id del fondo desbloqueado o lanza un Error con el motivo.
+// Paquete listo para vender que incluye este fondo (si hay alguno).
+export const bundleFor = (themeId) => PAYMENTS.bundles.find((b) => b.themes.includes(themeId) && PAYMENTS.storeId && b.checkout && b.productId) || null;
+
+// Códigos guardados en este dispositivo (van en la copia de seguridad) y unión con los de una copia.
+export const ownedRecords = () => readOwned();
+export function mergeOwned(records) {
+  const owned = readOwned();
+  let added = 0;
+  for (const [id, rec] of Object.entries(records || {})) {
+    if (PAYMENTS.products[id] && !owned[id] && rec?.key) {
+      owned[id] = rec;
+      added++;
+    }
+  }
+  prefs.set('bib.owned', JSON.stringify(owned));
+  return added;
+}
+
+// Activa un código de licencia (de un fondo o de un paquete). Devuelve los fondos desbloqueados
+// o lanza un Error con el motivo. Sirve también para recuperar una compra en otro dispositivo.
 export async function redeem(rawKey) {
   const key = rawKey.trim();
   if (key.length < 8) throw new Error('Ese código parece incompleto.');
@@ -79,15 +105,17 @@ export async function redeem(rawKey) {
     throw new Error('No hay conexión. Prueba de nuevo con internet.');
   }
   if (!res.activated) {
-    if (/limit/i.test(res.error || '')) throw new Error('Este código ya se usó en el máximo de dispositivos.');
+    if (/limit/i.test(res.error || '')) throw new Error('Este código ya se activó en el máximo de dispositivos (5).');
     throw new Error('Ese código no es válido.');
   }
   const meta = res.meta || {};
   if (String(meta.store_id) !== String(PAYMENTS.storeId)) throw new Error('Ese código no es de esta tienda.');
-  const themeId = Object.keys(PAYMENTS.products).find((id) => String(PAYMENTS.products[id].productId) === String(meta.product_id));
-  if (!themeId) throw new Error('Ese código no corresponde a ningún fondo.');
+  const same = (id) => String(id) === String(meta.product_id);
+  const single = Object.keys(PAYMENTS.products).find((id) => same(PAYMENTS.products[id].productId));
+  const themes = single ? [single] : PAYMENTS.bundles.find((b) => same(b.productId))?.themes;
+  if (!themes) throw new Error('Ese código no corresponde a ningún fondo.');
   const owned = readOwned();
-  owned[themeId] = { key, instance: res.instance?.id || null, at: Date.now() };
+  for (const id of themes) owned[id] = { key, instance: res.instance?.id || null, at: Date.now() };
   prefs.set('bib.owned', JSON.stringify(owned));
-  return themeId;
+  return themes;
 }

@@ -7,7 +7,9 @@ import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects } from './
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
 import { THEMES, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js';
-import { devMode, isOwned, paymentsReady, checkoutUrl, redeem, checkDevLink } from './store.js';
+import { devMode, isOwned, paymentsReady, checkoutUrl, redeem, checkDevLink, bundleFor, ORDERS_URL, ownedRecords, mergeOwned } from './store.js';
+import { stats, duration, dayKey } from './stats.js';
+import { buildBackup, readBackup, saveFile } from './backup.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -22,6 +24,7 @@ const ICON = {
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24"><path d="M15 4.5l4.5 4.5L9 19.5H4.5V15z"/><path d="M12.5 7l4.5 4.5"/></svg>',
 };
 
 const state = {
@@ -37,6 +40,10 @@ let lib;
 let reader;
 
 // ---------- Arranque ----------
+
+// Safari dibuja el libro 3D del lector por encima de las ventanas: ahí se oculta mientras hay una abierta.
+const ua = navigator.userAgent;
+if (/AppleWebKit/.test(ua) && !/Chrome|Chromium|CriOS|Edg/.test(ua)) document.documentElement.classList.add('webkit');
 
 async function boot() {
   await Promise.all([
@@ -58,6 +65,9 @@ async function boot() {
     onEdit: (book) => editBook(book.id),
     onAmbient: () => toggleSoundPanel($('#rSound')),
     onHighlights: showHighlights,
+    onToc: showToc,
+    onNote: editNote,
+    onFinish: finishBook,
   });
   reader.toast = toast;
 
@@ -368,21 +378,24 @@ function showTooltip(id, x, y) {
     tip.classList.remove('show');
     return;
   }
-  if (tip.dataset.id !== id || tip.dataset.v !== String(book.bookmark ?? '') + book.lastPage) {
+  const v = `${book.bookmark ?? ''}/${book.lastPage}/${book.finishedAt || ''}`;
+  if (tip.dataset.id !== id || tip.dataset.v !== v) {
     tip.dataset.id = id;
-    tip.dataset.v = String(book.bookmark ?? '') + book.lastPage;
+    tip.dataset.v = v;
     const url = coverURL(book);
-    const read = book.bookmark ?? book.lastPage ?? 1;
-    const prog = book.bookmark
-      ? `<svg width="10" height="14" viewBox="0 0 10 14"><path d="M0 0h10v14l-5-4-5 4z" fill="#8a2232"/></svg> Cinta en la página ${book.bookmark} de ${book.pageCount}`
-      : (book.lastPage || 1) > 1 ? `Página ${book.lastPage} de ${book.pageCount}` : `${book.pageCount} páginas · sin empezar`;
+    const pct = percentRead(book);
+    const prog = book.finishedAt
+      ? 'Terminado'
+      : book.bookmark
+        ? `<svg width="10" height="14" viewBox="0 0 10 14"><path d="M0 0h10v14l-5-4-5 4z" fill="#8a2232"/></svg> Cinta en la página ${book.bookmark} de ${book.pageCount} · ${pct} %`
+        : (book.lastPage || 1) > 1 ? `Página ${book.lastPage} de ${book.pageCount} · ${pct} % leído` : `${book.pageCount} páginas · sin empezar`;
     tip.innerHTML = `
       <div class="thumb" style="${url ? `background-image:url('${url}')` : `background-color:${book.color}`}"></div>
       <div>
         <h4>${esc(book.title)}</h4>
         <div class="by">${esc(book.author || 'Autor desconocido')}${book.year ? ` · ${esc(book.year)}` : ''}</div>
         <div class="prog">${prog}</div>
-        <div class="bar"><i style="width:${Math.round((read / Math.max(1, book.pageCount)) * 100)}%"></i></div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
       </div>`;
   }
   const w = 280, h = tip.offsetHeight || 110;
@@ -546,7 +559,7 @@ function renderSearch(query) {
       .map((b, i) => {
         const url = coverURL(b);
         const cat = categoryName(b.categoryId);
-        const where = b.bookmark ? `Cinta en la pág. ${b.bookmark}` : (b.lastPage || 1) > 1 ? `Pág. ${b.lastPage} de ${b.pageCount}` : `${b.pageCount} páginas`;
+        const where = b.finishedAt ? 'Terminado' : b.bookmark ? `Cinta en la pág. ${b.bookmark} · ${percentRead(b)} %` : (b.lastPage || 1) > 1 ? `Pág. ${b.lastPage} · ${percentRead(b)} %` : `${b.pageCount} páginas`;
         return `<button class="search-item ${i === 0 ? 'sel' : ''}" data-i="${i}">
           <span class="thumb" style="${url ? `background-image:url('${url}')` : `background-color:${b.color}`}"></span>
           <span class="info">
@@ -609,37 +622,364 @@ function bindSearch() {
 // ---------- Resaltados del libro abierto ----------
 
 function showHighlights(book) {
-  const list = [...(book.highlights || [])].sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
+  const list = () => [...(book.highlights || [])].sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
   const item = (h) => `
     <div class="hl-item" role="button" tabindex="0" data-id="${h.id}" data-page="${h.page}" title="Ir a la página ${h.page}">
       <span class="sw" style="background:${(HL_COLORS[h.color] || HL_COLORS.yellow).dot}"></span>
-      <span class="body"><span class="pg">Página ${h.page}</span><q>${esc(h.text.length > 280 ? h.text.slice(0, 280) + '…' : h.text)}</q></span>
+      <span class="body"><span class="pg">Página ${h.page}</span><q>${esc(h.text.length > 280 ? h.text.slice(0, 280) + '…' : h.text)}</q>${h.note ? `<span class="note">${esc(h.note)}</span>` : ''}</span>
+      <button class="x note-btn" data-note="${h.id}" title="${h.note ? 'Editar la nota' : 'Escribir una nota'}">${ICON.pencil}</button>
       <button class="x" data-del="${h.id}" title="Quitar este resaltado">×</button>
     </div>`;
+  const body = () =>
+    list().length
+      ? `<div class="hl-list">${list().map(item).join('')}</div>`
+      : '<p class="sub">Aún no resaltaste nada en este libro. Activa «Resaltar» y selecciona un texto.</p>';
   modal(
     `<div class="ornament">❦</div><h2>Mis resaltados</h2>
      <p class="sub">${esc(book.title)}</p>
-     ${list.length ? `<div class="hl-list">${list.map(item).join('')}</div>` : '<p class="sub">Aún no resaltaste nada en este libro. Activa «Resaltar» y selecciona un texto con el ratón.</p>'}
-     <div class="actions"><span class="grow"></span><button class="btn-dark" data-act="ok">Cerrar</button></div>`,
+     <div class="hl-wrap">${body()}</div>
+     <div class="actions"><button class="btn-ghost" data-act="export" ${list().length ? '' : 'hidden'}>Exportar a texto</button><span class="grow"></span><button class="btn-dark" data-act="ok">Cerrar</button></div>`,
     {
       wide: true,
       onMount(card, close) {
-        card.addEventListener('click', (e) => {
+        const rerender = () => {
+          card.querySelector('.hl-wrap').innerHTML = body();
+          card.querySelector('[data-act=export]').hidden = !list().length;
+        };
+        card.addEventListener('click', async (e) => {
           const del = e.target.closest('[data-del]');
           if (del) {
             reader.removeHighlight(del.dataset.del);
-            del.closest('.hl-item').remove();
+            rerender();
             return;
           }
+          const note = e.target.closest('[data-note]');
+          if (note) {
+            if (await editNote((book.highlights || []).find((h) => h.id === note.dataset.note))) rerender();
+            return;
+          }
+          const act = e.target.closest('[data-act]')?.dataset.act;
+          if (act === 'export') return exportHighlights(book);
+          if (act === 'ok') return close(null);
           const it = e.target.closest('.hl-item');
           if (it) {
             close(null);
             reader.goToPage(+it.dataset.page);
-          } else if (e.target.closest('[data-act=ok]')) close(null);
+          }
         });
       },
     }
   );
+}
+
+// ---------- Índice, notas y libros terminados ----------
+
+// Porcentaje leído según la última página abierta (un libro terminado es 100 %).
+const percentRead = (b) => (b.finishedAt ? 100 : Math.round((((b.lastPage || 1) - 1) / Math.max(1, (b.pageCount || 1) - 1)) * 100));
+
+async function showToc() {
+  const book = state.reading;
+  if (!book || !reader.isOpen) return;
+  const items = await reader.outline();
+  const { page, N } = reader.position();
+  let cur = -1;
+  items.forEach((it, i) => {
+    if (it.page <= page) cur = i;
+  });
+  const pct = (p) => Math.round(((p - 1) / Math.max(1, N - 1)) * 100);
+  modal(
+    `<div class="ornament">❦</div><h2>Índice</h2><p class="sub">${esc(book.title)}</p>
+     <div class="toc-go">
+       <div class="toc-where">Página <b data-p>${page}</b> de ${N} · <span data-pct>${pct(page)}</span> % del libro</div>
+       <input type="range" class="gold-range" min="1" max="${N}" value="${page}" aria-label="Elegir una página">
+       <button class="btn-ghost" data-act="go">Ir a esta página</button>
+     </div>
+     ${
+       items.length
+         ? `<div class="toc-list">${items.map((it, i) => `<button class="toc-item ${i === cur ? 'on' : ''}" data-page="${it.page}" style="--d:${it.depth}"><span>${esc(it.title)}</span><em>${it.page}</em></button>`).join('')}</div>`
+         : '<p class="sub">Este PDF no trae índice de capítulos: usa la barra para ir a cualquier página.</p>'
+     }
+     <div class="actions"><span class="grow"></span><button class="btn-dark" data-act="ok">Cerrar</button></div>`,
+    {
+      wide: true,
+      onMount(card, close) {
+        const r = card.querySelector('.gold-range');
+        const paint = () => {
+          r.style.setProperty('--p', `${((r.value - 1) / Math.max(1, N - 1)) * 100}%`);
+          card.querySelector('[data-p]').textContent = r.value;
+          card.querySelector('[data-pct]').textContent = pct(+r.value);
+        };
+        paint();
+        r.addEventListener('input', paint);
+        card.addEventListener('click', (e) => {
+          const it = e.target.closest('.toc-item');
+          const act = e.target.closest('[data-act]')?.dataset.act;
+          if (it) {
+            close(null);
+            reader.goToPage(+it.dataset.page);
+          } else if (act === 'go') {
+            close(null);
+            reader.goToPage(+r.value);
+          } else if (act === 'ok') close(null);
+        });
+        card.querySelector('.toc-item.on')?.scrollIntoView({ block: 'center' });
+      },
+    }
+  );
+}
+
+// Nota sobre un resaltado. Devuelve true si cambió.
+async function editNote(h) {
+  if (!h) return false;
+  const quote = h.text.length > 220 ? h.text.slice(0, 220) + '…' : h.text;
+  const res = await modal(
+    `<div class="ornament">❦</div><h2>Nota</h2>
+     <blockquote class="note-quote">${esc(quote)}</blockquote>
+     <textarea class="note-input" rows="5" placeholder="Lo que te hizo pensar este pasaje…">${esc(h.note || '')}</textarea>
+     <div class="actions">${h.note ? '<button class="btn-text danger" data-act="clear">Borrar nota</button>' : ''}<span class="grow"></span>
+       <button class="btn-ghost" data-act="cancel">Cancelar</button><button class="btn-dark" data-act="ok">Guardar</button></div>`,
+    {
+      onMount(card, close) {
+        const ta = card.querySelector('textarea');
+        setTimeout(() => ta.focus(), 60);
+        card.querySelector('[data-act=ok]').onclick = () => close({ note: ta.value.trim() });
+        card.querySelector('[data-act=cancel]').onclick = () => close(null);
+        card.querySelector('[data-act=clear]')?.addEventListener('click', () => close({ note: '' }));
+      },
+    }
+  );
+  if (!res || res.note === (h.note || '')) return false;
+  if (res.note) h.note = res.note;
+  else delete h.note;
+  reader.highlightsChanged();
+  toast(res.note ? 'Nota guardada' : 'Nota borrada');
+  return true;
+}
+
+// Todos los resaltados y notas del libro en un archivo de texto.
+function exportHighlights(book) {
+  const list = [...(book.highlights || [])].sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
+  const lines = [`${book.title}${book.author ? ` — ${book.author}` : ''}`, `Resaltados y notas · ${new Date().toLocaleDateString('es')}`, ''];
+  for (const h of list) {
+    lines.push(`Página ${h.page}`, `«${h.text}»`);
+    if (h.note) lines.push(`Nota: ${h.note}`);
+    lines.push('');
+  }
+  const name = `${book.title.replace(/[\\/:*?"<>|]+/g, '').slice(0, 60).trim() || 'Libro'} - resaltados.txt`;
+  saveFile(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }), name, `Resaltados de ${book.title}`);
+}
+
+function finishBook(book) {
+  if (book.finishedAt) return;
+  book.finishedAt = Date.now();
+  db.put('books', book);
+  const n = state.books.filter((b) => b.finishedAt).length;
+  toast(`¡Terminaste «${book.title}»! ${n === 1 ? 'Es tu primer libro terminado.' : `Ya llevas ${n} libros terminados.`}`, 5000);
+}
+
+// ---------- Estadísticas de lectura ----------
+
+// Cuenta el tiempo sólo con un libro abierto, la app a la vista y alguna señal de vida en los últimos 5 minutos.
+let lastTick = Date.now();
+function trackReading() {
+  const now = Date.now();
+  const sec = Math.min(30, (now - lastTick) / 1000);
+  lastTick = now;
+  if (!state.reading || !reader.isOpen || document.hidden || now - reader.lastActivity > 5 * 60e3) return;
+  stats.addSeconds(sec);
+  state.reading.readSeconds = Math.round((state.reading.readSeconds || 0) + sec);
+}
+
+function showStats() {
+  const s = stats.summary(state.books);
+  const max = Math.max(600, ...s.last.map((x) => x.sec));
+  const initials = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+  const bars = s.last
+    .map((x) => `<div class="st-bar ${x.sec >= 60 ? 'on' : ''}" title="${x.day.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}: ${duration(x.sec)}"><i style="height:${Math.max(x.sec ? 4 : 0, Math.round((x.sec / max) * 100))}%"></i><span>${initials[x.day.getDay()]}</span></div>`)
+    .join('');
+  const reading = state.books
+    .filter((b) => !b.finishedAt && (b.lastPage || 1) > 1)
+    .sort((a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0))
+    .slice(0, 3);
+  const days = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+  modal(
+    `<div class="ornament">❦</div><h2>Tu lectura</h2>
+     <p class="sub">${s.streak ? `Llevas ${days(s.streak)} seguidos leyendo. ¡Sigue así!` : 'Lee un rato hoy para empezar una racha de días seguidos.'}</p>
+     <div class="st-grid">
+       <div><b>${duration(s.today)}</b><span>Hoy</span></div>
+       <div><b>${days(s.streak)}</b><span>Racha · la mejor: ${days(s.best)}</span></div>
+       <div><b>${duration(s.week)}</b><span>Últimos 7 días</span></div>
+       <div><b>${s.finished}</b><span>${s.finished === 1 ? 'Libro terminado' : 'Libros terminados'}</span></div>
+     </div>
+     <div class="st-label">Últimas dos semanas</div>
+     <div class="st-bars">${bars}</div>
+     ${
+       reading.length
+         ? `<div class="st-label">Leyendo ahora</div><div class="st-books">${reading
+             .map((b) => `<div class="st-book"><span class="t">${esc(b.title)}</span><span class="bar"><i style="width:${percentRead(b)}%"></i></span><span class="n">${percentRead(b)} %${b.readSeconds ? ` · ${duration(b.readSeconds)}` : ''}</span></div>`)
+             .join('')}</div>`
+         : ''
+     }
+     <p class="st-total">En total: ${duration(s.total)} de lectura</p>
+     <div class="actions"><span class="grow"></span><button class="btn-dark" data-act="ok">Cerrar</button></div>`,
+    {
+      wide: true,
+      onMount(card, close) {
+        card.querySelector('[data-act=ok]').onclick = () => close(null);
+      },
+    }
+  );
+}
+
+// ---------- Copia de seguridad ----------
+
+async function showData() {
+  // Pedirlo de nuevo con un toque del usuario ayuda a que el navegador lo conceda.
+  const persisted = (await navigator.storage?.persist?.().catch(() => false)) || (await navigator.storage?.persisted?.().catch(() => false));
+  const est = await navigator.storage?.estimate?.().catch(() => null);
+  const used = est?.usage ? `${Math.max(1, Math.round(est.usage / 1048576))} MB usados` : '';
+  const last = +prefs.get('bib.lastBackup') || 0;
+  const n = state.books.length;
+  const safe = !!(db.folder || persisted);
+  const status = db.folder
+    ? `Tu biblioteca se guarda en la carpeta «${db.folder.name}» de OneDrive.`
+    : persisted
+      ? 'Almacenamiento protegido: el sistema no borrará tus libros para hacer espacio.'
+      : 'Este navegador no garantiza guardar tus libros para siempre: haz una copia de vez en cuando.';
+  modal(
+    `<div class="ornament">❦</div><h2>Copia de seguridad</h2>
+     <p class="sub">Guarda en un solo archivo ${n === 1 ? 'tu libro' : `tus ${n} libros`} con sus cintas, resaltados y notas, tus compras y tus estadísticas. Ábrelo en otro dispositivo para tener todo igual.</p>
+     <div class="data-status ${safe ? 'ok' : 'warn'}">${safe ? ICON.check : ICON.lock}<span>${esc(status)}${used ? ` <em>${used}</em>` : ''}</span></div>
+     <p class="data-last">${last ? `Última copia: ${new Date(last).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}` : 'Todavía no hiciste ninguna copia.'}</p>
+     <div class="actions"><button class="btn-ghost" data-act="import">Restaurar desde un archivo…</button><span class="grow"></span>
+       <button class="btn-dark" data-act="export" ${n ? '' : 'disabled'}>Crear copia</button></div>`,
+    {
+      wide: true,
+      onMount(card, close) {
+        card.addEventListener('click', (e) => {
+          const act = e.target.closest('[data-act]')?.dataset.act;
+          if (act === 'export') {
+            close(null);
+            exportBackup();
+          } else if (act === 'import') {
+            close(null);
+            $('#backupInput').click();
+          }
+        });
+      },
+    }
+  );
+}
+
+async function exportBackup() {
+  const work = working('Preparando la copia de seguridad…');
+  let blob;
+  try {
+    blob = await buildBackup({
+      books: state.books,
+      categories: state.categories,
+      extra: { owned: ownedRecords(), stats: stats.raw() },
+      onProgress: (i, n) => work.set('Preparando la copia de seguridad…', `Libro ${i + 1} de ${n}`),
+    });
+  } catch (err) {
+    console.error(err);
+    work.close();
+    return toast('No pude preparar la copia.', 5000);
+  }
+  work.close();
+  const name = `Biblioteca ${dayKey()}.biblioteca`;
+  const size = blob.size >= 1048576 ? `${Math.round(blob.size / 1048576)} MB` : `${Math.max(1, Math.round(blob.size / 1024))} KB`;
+  // Guardar necesita un toque propio (el teléfono no deja compartir después de una espera larga).
+  const saved = await modal(
+    `<div class="ornament">❦</div><h2>Copia lista</h2>
+     <p class="sub">«${esc(name)}» · ${size}. Guárdala en Archivos, iCloud Drive, OneDrive o donde prefieras.</p>
+     <div class="actions"><span class="grow"></span><button class="btn-ghost" data-act="cancel">Cancelar</button><button class="btn-dark" data-act="save">Guardar copia</button></div>`,
+    {
+      onMount(card, close) {
+        card.querySelector('[data-act=cancel]').onclick = () => close(false);
+        card.querySelector('[data-act=save]').onclick = () => saveFile(blob, name, 'Copia de Biblioteca').then((ok) => ok && close(true));
+      },
+    }
+  );
+  if (!saved) return;
+  prefs.set('bib.lastBackup', String(Date.now()));
+  toast('Copia de seguridad guardada', 3500);
+}
+
+async function importBackup(file) {
+  let data;
+  try {
+    data = await readBackup(file);
+  } catch (err) {
+    return toast(err.message || 'No pude leer ese archivo.', 5000);
+  }
+  const n = data.books.length;
+  const when = new Date(data.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' });
+  const ok = await confirmBox(
+    '¿Restaurar esta copia?',
+    `Es del ${when} y tiene ${n} libro${n === 1 ? '' : 's'}. Se suma a tu biblioteca sin borrar nada; si un libro está en los dos lados, queda la versión más reciente.`,
+    'Restaurar'
+  );
+  if (!ok) return;
+  const work = working('Restaurando tu biblioteca…');
+  try {
+    // Las categorías se reconocen por su nombre (cada dispositivo crea las suyas).
+    const map = {};
+    for (const c of data.categories || []) {
+      const same = state.categories.find((x) => x.id === c.id) || state.categories.find((x) => x.name.toLowerCase() === String(c.name).toLowerCase());
+      if (same) {
+        map[c.id] = same.id;
+        continue;
+      }
+      const nc = { id: c.id, name: c.name, order: Math.max(0, ...state.categories.map((x) => x.order ?? 0)) + 1 };
+      await db.put('categories', nc);
+      state.categories.push(nc);
+      map[c.id] = nc.id;
+    }
+    let added = 0, updated = 0;
+    for (const [i, { book, pdf }] of data.books.entries()) {
+      work.set('Restaurando tu biblioteca…', `Libro ${i + 1} de ${n}`);
+      book.categoryId = book.categoryId ? (map[book.categoryId] ?? '') : '';
+      const cur = state.books.find((b) => b.id === book.id);
+      if (cur) {
+        if (pdf && !(await db.get('files', book.id))) await db.put('files', { id: book.id, blob: pdf });
+        if ((book.updatedAt || 0) > (cur.updatedAt || 0)) {
+          Object.assign(cur, book, { coverBlob: book.coverBlob || cur.coverBlob });
+          await db.put('books', cur);
+          updated++;
+        }
+      } else if (pdf) {
+        await db.put('files', { id: book.id, blob: pdf });
+        state.books.push(book);
+        await db.put('books', book);
+        added++;
+      }
+    }
+    const bought = mergeOwned(data.owned);
+    stats.merge(data.stats);
+    work.close();
+    refreshShelf();
+    navigator.storage?.persist?.().catch(() => {});
+    const parts = [
+      added && `${added} libro${added === 1 ? '' : 's'} nuevo${added === 1 ? '' : 's'}`,
+      updated && `${updated} actualizado${updated === 1 ? '' : 's'}`,
+      bought && `${bought} fondo${bought === 1 ? '' : 's'} comprado${bought === 1 ? '' : 's'}`,
+    ].filter(Boolean);
+    toast(parts.length ? `Copia restaurada: ${parts.join(', ')}` : 'Copia restaurada: ya tenías todo lo que trae', 5000);
+  } catch (err) {
+    console.error(err);
+    work.close();
+    toast('No pude terminar de restaurar la copia.', 5000);
+  }
+}
+
+function moreMenu(e) {
+  const r = e.currentTarget.getBoundingClientRect();
+  showMenu(r.right - 230, r.bottom + 6, [
+    { label: 'Estadísticas de lectura', action: showStats },
+    { label: 'Copia de seguridad…', action: showData },
+    { label: 'Restaurar compras…', action: showRestore },
+  ]);
 }
 
 // ---------- Leer ----------
@@ -664,6 +1004,7 @@ async function openBook(id) {
   }
   document.body.classList.add('reading');
   book.lastOpenedAt = Date.now();
+  lastTick = Date.now();
   db.put('books', book);
   try {
     const opening = reader.open(book, file.blob, coverURL(book));
@@ -935,6 +1276,7 @@ function modal(html, { onMount, wide } = {}) {
   return new Promise((resolve) => {
     const bd = document.createElement('div');
     bd.className = 'modal-backdrop';
+    document.body.classList.add('modal-open');
     bd.innerHTML = `<div class="card ${wide ? 'wide' : ''}" role="dialog" aria-modal="true">${html}</div>`;
     $('#modal-root').appendChild(bd);
     requestAnimationFrame(() => bd.classList.add('in'));
@@ -949,7 +1291,10 @@ function modal(html, { onMount, wide } = {}) {
       if (done) return;
       done = true;
       bd.classList.remove('in');
-      setTimeout(() => bd.remove(), 250);
+      setTimeout(() => {
+        bd.remove();
+        if (!$('#modal-root').children.length) document.body.classList.remove('modal-open');
+      }, 250);
       document.removeEventListener('keydown', onKey, true);
       resolve(v);
     };
@@ -1119,6 +1464,7 @@ function updateDevBadge() {
 
 // Ficha de un fondo pago: comprar, ingresar el código recibido por email o probarlo 30 segundos.
 function showPurchase(t) {
+  const pack = bundleFor(t.id);
   modal(
     `<div class="purchase">
        <div class="pu-img" style="background-image:url('${t.preview}')"></div>
@@ -1126,6 +1472,7 @@ function showPurchase(t) {
        <p class="sub">${esc(t.mood)} · Sonido: ${esc(AMBIENTS[t.sound])}</p>
        <div class="pu-actions">
          <button class="btn-dark" data-act="buy">Comprar por ${priceLabel(t)}</button>
+         ${pack ? `<button class="btn-dark pack" data-act="pack">${esc(pack.name)} por ${priceLabel(pack)}</button>` : ''}
          <button class="btn-ghost" data-act="try">Probar 30 segundos</button>
        </div>
        <div class="pu-code">
@@ -1149,6 +1496,9 @@ function showPurchase(t) {
             }
             window.open(checkoutUrl(t.id), '_blank', 'noopener');
             msg.textContent = 'Al terminar el pago te llega un email con tu código: pégalo aquí abajo.';
+          } else if (act === 'pack') {
+            window.open(pack.checkout, '_blank', 'noopener');
+            msg.textContent = 'Al terminar el pago te llega un email con tu código: pégalo aquí abajo y se abren los dos fondos.';
           } else if (act === 'try') {
             close(null);
             previewTheme(t);
@@ -1157,15 +1507,59 @@ function showPurchase(t) {
             btn.disabled = true;
             msg.textContent = 'Comprobando el código…';
             try {
-              const id = await redeem(input.value);
+              const ids = await redeem(input.value);
               close(null);
-              toast(`¡Gracias! «${themeById(id).name}» ya es tuyo`, 4000);
-              chooseTheme(id);
+              thank(ids);
+              chooseTheme(ids.includes(t.id) ? t.id : ids[0]);
             } catch (err) {
               msg.textContent = err.message;
             } finally {
               btn.disabled = false;
             }
+          }
+        });
+        input.addEventListener('keydown', (e) => e.key === 'Enter' && card.querySelector('[data-act=redeem]').click());
+      },
+    }
+  );
+}
+
+const thank = (ids) => toast(`¡Gracias! ${ids.map((id) => `«${themeById(id).name}»`).join(' y ')} ${ids.length > 1 ? 'ya son tuyos' : 'ya es tuyo'}`, 4500);
+
+// Recuperar compras en un dispositivo nuevo (o después de borrar los datos): se vuelve a activar el código.
+function showRestore() {
+  const paid = THEMES.filter((t) => t.price > 0);
+  const status = (t) => (isOwned(t.id) ? 'Comprado en este dispositivo' : devMode() ? 'Abierto en modo desarrollador' : 'Sin comprar en este dispositivo');
+  modal(
+    `<div class="ornament">❦</div><h2>Restaurar compras</h2>
+     <p class="sub">¿Cambiaste de teléfono o se borraron los datos? Pega el código que te llegó por email al comprar. Cada código sirve en hasta 5 dispositivos.</p>
+     <div class="rs-list">${paid.map((t) => `<div class="rs-item"><span>${esc(t.name)}</span><em>${status(t)}</em></div>`).join('')}</div>
+     <div class="pu-code">
+       <label><span>Tu código</span><input type="text" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" autocomplete="off" spellcheck="false"></label>
+       <button class="btn-dark" data-act="redeem">Restaurar</button>
+       <p class="pu-msg" aria-live="polite"></p>
+       <p class="rs-help">¿No encuentras el email? <a href="${ORDERS_URL}" target="_blank" rel="noopener">Busca tus pedidos y códigos en Lemon Squeezy</a> con el mismo email con que compraste.</p>
+     </div>
+     <div class="actions"><span class="grow"></span><button class="btn-ghost" data-act="ok">Cerrar</button></div>`,
+    {
+      wide: true,
+      onMount(card, close) {
+        const msg = card.querySelector('.pu-msg');
+        const input = card.querySelector('.pu-code input');
+        card.addEventListener('click', async (e) => {
+          const btn = e.target.closest('[data-act]');
+          if (btn?.dataset.act === 'ok') return close(null);
+          if (btn?.dataset.act !== 'redeem') return;
+          btn.disabled = true;
+          msg.textContent = 'Comprobando el código…';
+          try {
+            const ids = await redeem(input.value);
+            close(null);
+            thank(ids);
+          } catch (err) {
+            msg.textContent = err.message;
+          } finally {
+            btn.disabled = false;
           }
         });
         input.addEventListener('keydown', (e) => e.key === 'Enter' && card.querySelector('[data-act=redeem]').click());
@@ -1285,6 +1679,10 @@ function bindUI() {
 
   $('#themeBtn').addEventListener('click', openThemes);
   $('#themes').addEventListener('click', (e) => {
+    if (e.target.closest('[data-restore]')) {
+      closeThemes();
+      return showRestore();
+    }
     const card = e.target.closest('.theme-card');
     if (card) chooseTheme(card.dataset.id);
     else if (e.target.closest('[data-close]') || e.target.id === 'themes') closeThemes();
@@ -1314,6 +1712,14 @@ function bindUI() {
     closeSoundPanel();
   });
   $('#cloudBtn').addEventListener('click', cloudClick);
+  $('#moreBtn').addEventListener('click', moreMenu);
+  $('#backupInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) importBackup(file);
+  });
+  setInterval(trackReading, 15000);
+  document.addEventListener('visibilitychange', () => (lastTick = Date.now()));
   bindSearch();
   window.addEventListener('focus', checkRemote);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkRemote());

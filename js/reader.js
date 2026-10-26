@@ -21,8 +21,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
 export class Reader {
-  constructor({ onClose, onSave, onEdit, onAmbient, onHighlights }) {
-    Object.assign(this, { onClose, onSave, onEdit, onAmbient, onHighlights });
+  constructor({ onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish }) {
+    Object.assign(this, { onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish });
     this.el = $('#reader');
     this.stage = $('#stage');
     this.bk = $('#book3d');
@@ -41,6 +41,8 @@ export class Reader {
     this.mode = prefs.get('bib.mode') || 'auto';
     this.isOpen = false;
     this.busy = false;
+    this.lastActivity = 0;
+    this.setPaper(prefs.get('bib.paper') || 'day');
     document.documentElement.style.setProperty('--paperTex', `url(${paperDataURL()})`);
     document.documentElement.style.setProperty('--deskTex', `url(${deskDataURL()})`);
     this.bind();
@@ -401,6 +403,8 @@ export class Reader {
     this.zoomIdx = 0;
     this.cache.clear();
     this.textCache = new Map();
+    this.outlineP = null;
+    this.lastActivity = Date.now();
     this.hlRev = (this.hlRev || 0) + 1;
     this.applyTheme();
     this.layout();
@@ -614,6 +618,8 @@ export class Reader {
   }
 
   afterMove() {
+    this.lastActivity = Date.now();
+    if (this.s >= this.maxS) this.onFinish?.(this.book);
     if (this.hlMode) this.buildTextLayers();
     this.updateEdges();
     this.updateRibbon(false);
@@ -627,6 +633,53 @@ export class Reader {
   flushSave() {
     clearTimeout(this.saveT);
     if (this.book) this.onSave?.(this.book);
+  }
+
+  // Página visible y total, para el índice y el porcentaje leído.
+  position() {
+    const page = this.realPages(this.s)[0] ?? (this.s <= this.minS ? 1 : this.N);
+    return { page, N: this.N };
+  }
+
+  // Índice de capítulos que trae el PDF (hasta tres niveles), con la página de cada uno.
+  outline() {
+    if (!this.pdf) return Promise.resolve([]);
+    const pdf = this.pdf;
+    this.outlineP ??= (async () => {
+      const out = [];
+      const walk = async (items, depth) => {
+        for (const it of items || []) {
+          if (out.length > 500) return;
+          let page = null;
+          try {
+            let dest = it.dest;
+            if (typeof dest === 'string') dest = await pdf.getDestination(dest);
+            if (Array.isArray(dest) && dest[0] != null) page = typeof dest[0] === 'number' ? dest[0] + 1 : (await pdf.getPageIndex(dest[0])) + 1;
+          } catch {
+            /* destino roto: el capítulo queda sin página */
+          }
+          const title = (it.title || '').replace(/\s+/g, ' ').trim();
+          if (title && page) out.push({ title, page, depth });
+          if (depth < 2) await walk(it.items, depth + 1);
+        }
+      };
+      await walk(await pdf.getOutline().catch(() => null), 0);
+      return out;
+    })();
+    return this.outlineP;
+  }
+
+  // Papel: de día, sepia (más cálido) o de noche (letras claras sobre fondo oscuro).
+  setPaper(mode) {
+    this.paper = ['day', 'sepia', 'night'].includes(mode) ? mode : 'day';
+    prefs.set('bib.paper', this.paper);
+    this.el.dataset.paper = this.paper;
+    const btn = $('#rPaper');
+    if (btn) {
+      const label = { day: 'Día', sepia: 'Sepia', night: 'Noche' }[this.paper];
+      btn.querySelector('span').textContent = label;
+      btn.title = `Papel: ${label} (cambia entre día, sepia y noche)`;
+    }
   }
 
   // ---------- La cinta ----------
@@ -780,6 +833,7 @@ export class Reader {
       else if (k === '-') this.setZoom(this.zoomIdx - 1);
       else return;
       e.preventDefault();
+      this.lastActivity = Date.now();
       this.showUI();
     });
 
@@ -839,7 +893,11 @@ export class Reader {
       else this.prev();
     }, { passive: false });
 
-    this.el.addEventListener('pointermove', () => this.isOpen && !this.closing && this.showUI());
+    this.el.addEventListener('pointermove', () => {
+      if (!this.isOpen || this.closing) return;
+      this.lastActivity = Date.now();
+      this.showUI();
+    });
     window.addEventListener('resize', () => {
       clearTimeout(this.resizeT);
       this.resizeT = setTimeout(() => this.relayout(), 150);
@@ -847,6 +905,8 @@ export class Reader {
 
     $('#rBack').addEventListener('click', () => this.close());
     $('#rInfo').addEventListener('click', () => this.onEdit?.(this.book));
+    $('#rToc').addEventListener('click', () => this.onToc?.());
+    $('#rPaper').addEventListener('click', () => this.setPaper({ day: 'sepia', sepia: 'night', night: 'day' }[this.paper]));
     $('#rPrev').addEventListener('click', () => this.prev());
     $('#rNext').addEventListener('click', () => this.next());
     $('#rRibbon').addEventListener('click', () => this.toggleRibbon());
@@ -864,6 +924,7 @@ export class Reader {
       const dot = e.target.closest('.hl-dot');
       if (dot) this.recolorHighlight(id, dot.dataset.color);
       else if (e.target.closest('[data-act=del]')) this.removeHighlight(id);
+      else if (e.target.closest('[data-act=note]')) this.onNote?.((this.book.highlights || []).find((h) => h.id === id));
       else return;
       this.hidePop();
     });

@@ -39,7 +39,7 @@ export const THEMES = [
     name: 'Paddock Club',
     mood: 'Rojo Maranello, cascos y autos pasando por la recta',
     sound: 'paddock',
-    price: 0.99,
+    price: 1.99,
     preview: 'themes/paddock.jpg',
   },
   {
@@ -47,7 +47,7 @@ export const THEMES = [
     name: 'Tennis',
     mood: 'París, arcilla roja y trofeos de campeón',
     sound: 'paris',
-    price: 0.99,
+    price: 1.99,
     preview: 'themes/tierra.jpg',
   },
 ];

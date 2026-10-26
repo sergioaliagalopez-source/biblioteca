@@ -35,12 +35,19 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   y selecciona el texto con el ratón. Clic sobre un resaltado para cambiarle el color o quitarlo.
   **Mis resaltados** lista todos los del libro; clic en uno para ir a su página. `Esc` o **Listo** para volver a pasar hojas con clic.
   (Los PDF escaneados como imagen no tienen texto, así que no se pueden resaltar.)
+- **Notas**: toca un resaltado → **Nota** para escribir lo que te hizo pensar. En **Mis resaltados** se ven las notas
+  (el lápiz las edita) y **Exportar a texto** guarda todos los resaltados y notas del libro en un archivo.
+- **Índice**: botón **Índice** arriba en el lector. Muestra los capítulos que trae el PDF (si los trae) y una barra
+  para saltar a cualquier página, con el porcentaje del libro.
+- **Papel**: botón de arriba en el lector que cambia entre **Día**, **Sepia** (más cálido) y **Noche** (letras claras
+  sobre fondo oscuro, para leer a oscuras).
+- **Progreso**: al pasar el ratón (o mantener apretado) un libro se ve la página y el porcentaje leído.
 - **Buscar**: la lupa de arriba (o `Ctrl+K`, o la tecla `/`). Escribe parte del título, el autor o la categoría
   (sin importar tildes); con `↑` `↓` eliges y `Enter` abre el libro. Sin escribir nada, muestra los leídos recientemente.
 - **Fondos**: botón de abajo a la derecha. Seis ambientes, cada uno con su sonido.
   Incluidos con la app: **Biblioteca clásica** (chimenea), **Mansión frente al mar** (olas),
   **Salón de jazz** (jazz suave) y **Ático moderno** (lluvia tranquila y piano, con relámpagos y truenos).
-  De pago, 0,99 US$ cada uno:
+  De pago, 1,99 US$ cada uno (o los dos juntos en un paquete, cuando esté creado):
   - **Paddock Club**: suite sobre la recta. Cada 45 segundos se encienden los semáforos y pasan los autos.
     Tiene cascos, autos a escala y un traje enmarcado.
   - **Tennis**: palco alto de un estadio de París vacío, detrás de la línea de fondo, con la cancha de arcilla abajo, a lo largo.
@@ -53,6 +60,17 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   Un fondo bloqueado muestra un candado. Al tocarlo ofrece **Comprar**, **Probar 30 segundos** o **pegar el código** recibido por email.
 - **Sonido**: ícono de parlante arriba (y en la barra del lector). Volumen general, ambiente y hojas/cinta;
   y el ambiente: el del fondo, o chimenea, olas, jazz, lluvia y piano, motores, tarde en París, lluvia o silencio.
+
+## Menú (≡ arriba a la derecha)
+
+- **Estadísticas de lectura**: tiempo leído hoy, en los últimos 7 días y en total, la racha de días seguidos leyendo
+  (cuenta un día con al menos un minuto), los libros terminados y los que estás leyendo. El tiempo sólo corre con un
+  libro abierto y la app a la vista.
+- **Copia de seguridad**: guarda en un archivo `.biblioteca` todos tus libros con sus portadas, cintas, resaltados y
+  notas, tus compras y tus estadísticas. **Restaurar desde un archivo** la suma a la biblioteca de cualquier
+  dispositivo sin borrar nada. También muestra si el navegador protege tus libros para que no se borren solos.
+- **Restaurar compras**: en un teléfono nuevo, pega el código de compra que llegó por email. Si no lo encuentras,
+  el enlace lleva a «Mis pedidos» de Lemon Squeezy. También está en **Fondos** → «Restaurar compras».
 
 ## Atajos en el lector
 
@@ -90,13 +108,17 @@ Lemon Squeezy cobra con tarjeta o PayPal en todo el mundo, se ocupa de los impue
 banco o a PayPal. Comisión aproximada: 5 % + 0,50 US$ por venta.
 
 1. Crea una cuenta en lemonsqueezy.com y una tienda. Completa los datos de pago (Settings → Payouts).
-2. Crea un producto por fondo, «Paddock Club» y «Tennis», a 0,99 US$.
+2. Crea un producto por fondo, «Paddock Club» y «Tennis», a 1,99 US$.
    En cada uno activa **Generate license keys**, con un límite de activaciones de 5.
 3. Copia en `js/store.js`, dentro de `PAYMENTS`:
    - `storeId`: el número de la tienda (Settings → Stores).
    - Para cada fondo, `checkout`: el enlace de compra del producto (Share → enlace).
    - Para cada fondo, `productId`: el número del producto (aparece en la dirección al editarlo).
 4. Publica. Mientras falten esos datos, **Comprar** avisa que los pagos aún no están habilitados.
+
+**Paquete de los dos fondos**: crea un tercer producto «Paddock Club + Tennis» a 2,99 US$, también con
+**Generate license keys** (límite 5). Copia su enlace y su número en `PAYMENTS.bundles` (`checkout` y `productId`).
+Desde entonces la ficha de cada fondo ofrece también el paquete, y su código abre los dos fondos.
 
 Cómo compra la gente: toca **Comprar**, paga y recibe por email un código de licencia.
 Lo pega en la app y el fondo queda desbloqueado. El mismo código sirve en sus otros dispositivos.
