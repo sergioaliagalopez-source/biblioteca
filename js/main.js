@@ -4,7 +4,7 @@ import { clamp } from './textures.js';
 import { folderSupported, pickFolder, hasPermission, FolderStore } from './cloud.js';
 import { Library3D } from './library3d.js';
 import { Reader, HL_COLORS } from './reader.js';
-import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects, loadPdfjs, detectTwoUp, remapBook } from './pdfdoc.js';
+import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects, loadPdfjs, detectTwoUp, remapBook, frameOf, remapFrame, pageAspectOf } from './pdfdoc.js';
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
 import { THEMES, COLLECTIONS, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js';
@@ -1270,7 +1270,11 @@ async function importFiles(fileList) {
       const pageCount = pdf.numPages * (split ? 2 : 1);
       const aspects = await pageAspects(pdf);
       const coverAspect = aspects.coverAspect;
-      const pageAspect = aspects.pageAspect * (split ? Math.max(split, 1 - split) : 1);
+      // encuadre de libro: márgenes parejos y espejados, como en un libro impreso
+      const frame = await frameOf(pdf, split).catch(() => null);
+      const v1 = (await pdf.getPage(1)).getViewport({ scale: 1 });
+      const sheet = { w: v1.width, h: v1.height };
+      const pageAspect = pageAspectOf({ frame, split, sheet });
       const meta = (await pdf.getMetadata().catch(() => null))?.info || {};
       const pdfCover = await renderCoverFromPdf(pdf).catch(() => null);
       const textGuess = await guessTitleFromText(pdf).catch(() => '');
@@ -1284,14 +1288,19 @@ async function importFiles(fileList) {
       const draft = {
         id: uid(), title: info.title, author: info.author, year: info.year, description: info.description,
         categoryId: suggestCategory(info.subjects, state.categories),
-        pageCount, aspect: coverAspect, pageAspect, fileName: file.name, split,
+        pageCount, aspect: coverAspect, pageAspect, fileName: file.name, split, frame, sheet,
         addedAt: Date.now(), bookmark: null, lastPage: 1,
       };
       // Si la primera página del PDF parece una portada, es la edición exacta: la preferimos.
       const pick = pdfCover?.likelyCover ? 'pdf' : online ? 'online' : pdfCover ? 'pdf' : null;
       const result = await bookDialog(draft, { mode: 'new', found: info.found, covers: { pdf: pdfCover?.blob || null, online: online?.blob || null }, pick });
       if (!result) continue;
-      remapBook(result, split, result.split);
+      if (result.split !== split || result.noFrame) {
+        // cambió cómo leer las hojas al importar: el encuadre se vuelve a medir al abrir el libro
+        remapBook(result, split, result.split);
+        result.frame = undefined;
+        result.pageAspect = pageAspectOf(result);
+      }
       await db.put('files', { id: result.id, blob: file });
       await saveBook(result);
       if (state.active !== 'all' && result.categoryId !== state.active) state.active = result.categoryId || 'all';
@@ -1324,7 +1333,13 @@ async function editBook(id) {
     return deleteBook(id, true);
   }
   // Cambió cómo se leen las hojas (una o dos páginas por hoja): se pasa todo a la nueva numeración.
-  if (result.split !== book.split) remapBook(result, book.split || false, result.split);
+  if (result.split !== book.split || !!result.noFrame !== !!book.noFrame) {
+    // los resaltados vuelven a la hoja original, se pasa a la nueva división y el encuadre se mide de nuevo
+    remapFrame(result, book.noFrame ? null : book.frame, null);
+    if (result.split !== book.split) remapBook(result, book.split || false, result.split);
+    result.frame = undefined;
+    result.pageAspect = pageAspectOf(result);
+  }
   await saveBook(result);
   refreshShelf();
   if (state.reading?.id === id) reader.refreshBook(coverURL(book));
@@ -1364,6 +1379,10 @@ function bookDialog(draft, { mode, found, covers, pick }) {
         <label><span>Hojas del PDF</span><select name="split" ${state.reading?.id === draft.id ? 'disabled title="Cierra el libro para cambiar esto"' : ''}>
           <option value="0" ${draft.split ? '' : 'selected'}>Una página por hoja</option>
           <option value="1" ${draft.split ? 'selected' : ''}>Dos páginas por hoja (libro abierto)</option>
+        </select></label>
+        <label><span>Encuadre de las páginas</span><select name="frame" ${state.reading?.id === draft.id ? 'disabled title="Cierra el libro para cambiar esto"' : ''}>
+          <option value="1" ${draft.noFrame ? '' : 'selected'}>Márgenes de libro (automático)</option>
+          <option value="0" ${draft.noFrame ? 'selected' : ''}>Original del PDF</option>
         </select></label>
         <button class="link-btn" data-act="search">Buscar de nuevo con estos datos</button>
         <p class="desc"></p>
@@ -1490,6 +1509,7 @@ function bookDialog(draft, { mode, found, covers, pick }) {
             year: f('year').value.trim(),
             categoryId: f('cat').value === '__new' ? '' : f('cat').value,
             // sin tocar en un libro aún no revisado, queda sin decidir (el lector lo detecta al abrirlo)
+            noFrame: f('frame').disabled ? draft.noFrame : f('frame').value === '0',
             split: f('split').disabled ? draft.split : f('split').value === '1' ? draft.split || 0.5 : draft.split === undefined ? undefined : false,
             description: desc.textContent,
             coverBlob,

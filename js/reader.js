@@ -1,6 +1,6 @@
 // Lector: un libro de tapa dura en CSS 3D, con hojas que pasan, guardas marmoladas
 // y una cinta de seda que marca dónde dejaste de leer.
-import { openPdf, renderPage, pdfUtil, detectTwoUp, splitDoc, remapBook } from './pdfdoc.js';
+import { openPdf, renderPage, pdfUtil, detectTwoUp, bookDoc, remapBook, frameOf, remapFrame, pageAspectOf } from './pdfdoc.js';
 import { prefs } from './db.js';
 import { sound } from './sound.js';
 import { voiceFor, speechRate } from './voices.js';
@@ -412,13 +412,30 @@ export class Reader {
     const raw = await openPdf(blob);
     // Libros que todavía no se revisaron: ¿cada hoja trae dos páginas? Si es así, se dividen y se pasan
     // la página, la cinta y los resaltados guardados a la nueva numeración.
+    let changed = false;
+    if (!book.sheet) {
+      const v = (await raw.getPage(1)).getViewport({ scale: 1 });
+      book.sheet = { w: v.width, h: v.height };
+      changed = true;
+    }
     if (book.split === undefined) {
       const s = await detectTwoUp(raw).catch(() => false);
       remapBook(book, false, s);
       book.split = s;
+      changed = true;
+    }
+    // Encuadre de libro: se mide una vez por libro (salvo que se haya pedido el original del PDF).
+    if (book.frame === undefined && !book.noFrame) {
+      const f = await frameOf(raw, book.split).catch(() => null);
+      remapFrame(book, null, f);
+      book.frame = f || null;
+      changed = true;
+    }
+    if (changed) {
+      book.pageAspect = pageAspectOf(book);
       this.onSave?.(book);
     }
-    this.pdf = book.split ? splitDoc(raw, book.split) : raw;
+    this.pdf = bookDoc(raw, { split: book.split, frame: book.noFrame ? null : book.frame });
     this.N = this.pdf.numPages;
     this.aspect = book.pageAspect || book.aspect || 0.66;
     this.zoomIdx = 0;

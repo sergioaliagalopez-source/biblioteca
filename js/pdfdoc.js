@@ -159,44 +159,206 @@ export async function detectTwoUp(pdf) {
   return Math.round(hits[Math.floor(hits.length / 2)] * 1000) / 1000;
 }
 
-// Una mitad de hoja que se comporta como una página de PDF.js (lo que usa el lector).
-function halfPage(page, side, s) {
-  const x0 = page.view[0], W0 = page.view[2] - page.view[0];
+// ---------- Encuadre de libro ----------
+// Cada PDF trae sus propios márgenes (a veces el texto pegado a un borde, o corrido de una página a otra).
+// Se mide dónde está el bloque de texto en varias páginas y se vuelve a componer cada página con márgenes de
+// libro de tapa dura: el bloque igual en todas, más margen hacia el lomo que hacia afuera, y espejado entre
+// las páginas izquierdas (pares) y las derechas (impares).
+
+const MARGIN = { inner: 0.1, outer: 0.075, top: 0.075, bottom: 0.085 };
+
+// Caja del contenido (en unidades del PDF, desde arriba a la izquierda), dentro de la franja [cx0, cx1].
+async function contentBox(page, cx0, cx1) {
+  const [vx0, , , vy1] = page.view;
+  const tc = await page.getTextContent();
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, chars = 0;
+  for (const it of tc.items) {
+    const s = it.str.trim();
+    if (!s) continue;
+    const x = it.transform[4] - vx0, w = it.width || 0;
+    if (x + w / 2 < cx0 || x + w / 2 > cx1) continue;
+    const h = it.height || Math.hypot(it.transform[2], it.transform[3]) || 8;
+    const base = vy1 - it.transform[5];
+    x0 = Math.min(x0, x);
+    x1 = Math.max(x1, x + w);
+    y0 = Math.min(y0, base - h);
+    y1 = Math.max(y1, base + h * 0.25);
+    chars += s.length;
+  }
+  if (chars >= 40) return { x0, y0, x1, y1 };
+  // Escaneo sin texto: la caja de la tinta en una versión chica de la página.
+  const vp1 = page.getViewport({ scale: 1 });
+  const k = 360 / vp1.width;
+  const c = document.createElement('canvas');
+  c.width = 360;
+  c.height = Math.round(vp1.height * k);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: k }) }).promise;
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  const a = Math.floor(cx0 * k), b = Math.min(c.width, Math.ceil(cx1 * k));
+  // se ignora un borde fino (sombras del escaneo en los cantos)
+  const pad = Math.round(c.width * 0.015);
+  let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity, ink = 0;
+  for (let y = pad; y < c.height - pad; y++) {
+    for (let x = Math.max(a, pad); x < Math.min(b, c.width - pad); x++) {
+      const i = (y * c.width + x) * 4;
+      if (d[i] + d[i + 1] + d[i + 2] < 330) {
+        ink++;
+        if (x < bx0) bx0 = x;
+        if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y;
+        if (y > by1) by1 = y;
+      }
+    }
+  }
+  if (ink < 200) return null;
+  return { x0: bx0 / k, y0: by0 / k, x1: (bx1 + 1) / k, y1: (by1 + 1) / k };
+}
+
+const pct = (arr, p) => {
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))];
+};
+
+// Mide hasta 16 páginas y devuelve el encuadre { w, h, odd: [x, y, ancho, alto], even: [...] } o null.
+export async function frameOf(pdf, split) {
+  const n = pdf.numPages;
+  const first = await pdf.getPage(1);
+  const v1 = first.getViewport({ scale: 1 });
+  const W = v1.width, H = v1.height;
+  const from = n > 3 ? 2 : 1;
+  const count = Math.min(16, n - from + 1);
+  const picks = [...new Set(Array.from({ length: count }, (_, i) => Math.round(from + ((i + 0.5) / count) * (n - from))))];
+  const boxes = { odd: [], even: [] };
+  for (const i of picks) {
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({ scale: 1 });
+    if (Math.abs(vp.width - W) > 2 || Math.abs(vp.height - H) > 2) continue; // hojas de otro tamaño
+    const parts = split ? [['odd', 0, W * split], ['even', W * split, W]] : [[i % 2 ? 'odd' : 'even', 0, W]];
+    for (const [key, a, b] of parts) {
+      const box = await contentBox(page, a, b).catch(() => null);
+      // cajas casi vacías (páginas en blanco o con una sola línea) no sirven para medir
+      if (box && box.x1 - box.x0 > (b - a) * 0.3 && box.y1 - box.y0 > H * 0.3) boxes[key].push(box);
+    }
+  }
+  if (boxes.odd.length + boxes.even.length < 3) return null;
+  // sin muestras de un lado, se usa el otro
+  if (!boxes.odd.length) boxes.odd = boxes.even;
+  if (!boxes.even.length) boxes.even = boxes.odd;
+  const agg = (list) => ({ x0: pct(list.map((b) => b.x0), 0.15), y0: pct(list.map((b) => b.y0), 0.15), x1: pct(list.map((b) => b.x1), 0.85), y1: pct(list.map((b) => b.y1), 0.85) });
+  const o = agg(boxes.odd), e = agg(boxes.even);
+  // el mismo tamaño de bloque en las dos clases de página
+  const cw = Math.max(o.x1 - o.x0, e.x1 - e.x0), ch = Math.max(o.y1 - o.y0, e.y1 - e.y0);
+  const pw = cw / (1 - MARGIN.inner - MARGIN.outer), ph = ch / (1 - MARGIN.top - MARGIN.bottom);
+  const r = (v) => Math.round(v * 10) / 10;
+  return {
+    v: 1, w: W, h: H,
+    // impar = página derecha (el lomo a su izquierda); par = página izquierda (el lomo a su derecha)
+    odd: [r(o.x0 - pw * MARGIN.inner), r(o.y0 - ph * MARGIN.top), r(pw), r(ph)],
+    even: [r(e.x0 - pw * MARGIN.outer), r(e.y0 - ph * MARGIN.top), r(pw), r(ph)],
+  };
+}
+
+// Recorte de la página v según cómo se lee el libro: el encuadre, la mitad de la hoja o la hoja entera.
+// [x, y, ancho, alto] en unidades del PDF desde arriba a la izquierda.
+function boxFor(v, split, frame, W, H) {
+  if (frame && (split || v > 1)) return frame[v % 2 ? 'odd' : 'even'];
+  if (split) return v % 2 ? [0, 0, W * split, H] : [W * split, 0, W * (1 - split), H];
+  return [0, 0, W, H];
+}
+
+// Una página recortada que se comporta como una página de PDF.js (lo que usa el lector).
+function framedPage(page, box, textRange) {
+  const [bx, by, bw, bh] = box;
   return {
     get view() {
-      return side === 0 ? [x0, page.view[1], x0 + W0 * s, page.view[3]] : [x0 + W0 * s, page.view[1], page.view[2], page.view[3]];
+      const [vx0, , , vy1] = page.view;
+      return [vx0 + bx, vy1 - by - bh, vx0 + bx + bw, vy1 - by];
     },
     getViewport({ scale = 1, offsetX = 0, offsetY = 0 } = {}) {
-      const full = page.getViewport({ scale });
-      const vp = page.getViewport({ scale, offsetX: offsetX - (side ? full.width * s : 0), offsetY });
-      const half = Object.assign(Object.create(Object.getPrototypeOf(vp)), vp);
-      half.width = full.width * (side ? 1 - s : s);
-      return half;
+      const vp = page.getViewport({ scale, offsetX: offsetX - bx * scale, offsetY: offsetY - by * scale });
+      const out = Object.assign(Object.create(Object.getPrototypeOf(vp)), vp);
+      out.width = bw * scale;
+      out.height = bh * scale;
+      return out;
     },
     async getTextContent(opts) {
       const tc = await page.getTextContent(opts);
-      const cut = x0 + W0 * s;
-      tc.items = tc.items.filter((it) => (it.transform[4] + (it.width || 0) / 2 < cut) === (side === 0));
+      if (textRange) {
+        const x0 = page.view[0];
+        tc.items = tc.items.filter((it) => {
+          const mid = it.transform[4] - x0 + (it.width || 0) / 2;
+          return mid >= textRange[0] && mid < textRange[1];
+        });
+      }
       return tc;
     },
-    render: (params) => page.render(params),
+    render(params) {
+      const task = page.render(params);
+      if (!textRange) return task;
+      // con márgenes amplios el recorte puede asomarse a la otra página de la hoja: eso se tapa con papel
+      const W = page.view[2] - page.view[0];
+      const k = params.viewport.scale;
+      const promise = task.promise.then(() => {
+        const ctx = params.canvasContext, cw = ctx.canvas.width, chh = ctx.canvas.height;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = '#fff';
+        const a = (textRange[0] - bx) * k, b = (textRange[1] - bx) * k;
+        if (a > 0) ctx.fillRect(0, 0, Math.ceil(a), chh);
+        if (b < cw && textRange[1] < W - 0.5) ctx.fillRect(Math.floor(b), 0, cw - Math.floor(b), chh);
+        ctx.restore();
+      });
+      return { promise, cancel: () => task.cancel() };
+    },
     cleanup: () => page.cleanup(),
   };
 }
 
-// El documento con las hojas divididas: la página v es la mitad izquierda (impar) o derecha (par) de la hoja ⌈v/2⌉.
-export function splitDoc(pdf, s) {
+// El documento tal como se lee: con las hojas divididas (dos páginas por hoja) y/o con encuadre de libro.
+export function bookDoc(pdf, { split = false, frame = null } = {}) {
+  if (!split && !frame) return pdf;
   return {
-    split: s,
-    numPages: pdf.numPages * 2,
-    getPage: async (v) => halfPage(await pdf.getPage(Math.ceil(v / 2)), (v - 1) % 2, s),
+    split,
+    numPages: pdf.numPages * (split ? 2 : 1),
+    async getPage(v) {
+      const page = await pdf.getPage(split ? Math.ceil(v / 2) : v);
+      const W = page.view[2] - page.view[0], H = page.view[3] - page.view[1];
+      const box = boxFor(v, split, frame, W, H);
+      const range = split ? (v % 2 ? [0, W * split] : [W * split, W]) : null;
+      return framedPage(page, box, range);
+    },
     getOutline: () => pdf.getOutline(),
     getDestination: (d) => pdf.getDestination(d),
-    getPageIndex: async (ref) => (await pdf.getPageIndex(ref)) * 2,
-    toVirtual: (i) => i * 2,
+    getPageIndex: async (ref) => (await pdf.getPageIndex(ref)) * (split ? 2 : 1),
+    toVirtual: (i) => i * (split ? 2 : 1),
     getMetadata: () => pdf.getMetadata(),
     destroy: () => pdf.destroy(),
   };
+}
+
+// Proporción de la página tal como se ve (para medir el libro).
+export function pageAspectOf(book) {
+  const f = book.frame;
+  if (f) return f.odd[2] / f.odd[3];
+  const s = book.sheet;
+  if (!s) return book.pageAspect;
+  return (s.w * (book.split ? Math.max(book.split, 1 - book.split) : 1)) / s.h;
+}
+
+// Los resaltados guardan su lugar relativo a la página que se veía: al cambiar el encuadre se recalculan.
+export function remapFrame(book, from, to) {
+  if (!book.sheet || from === to) return;
+  const { w: W, h: H } = book.sheet;
+  for (const hl of book.highlights || []) {
+    const a = boxFor(hl.page, book.split, from || null, W, H), b = boxFor(hl.page, book.split, to || null, W, H);
+    hl.rects = hl.rects.map(([x, y, w, h]) => {
+      const px = a[0] + x * a[2], py = a[1] + y * a[3];
+      return [(px - b[0]) / b[2], (py - b[1]) / b[3], (w * a[2]) / b[2], (h * a[3]) / b[3]].map((v) => Math.round(v * 10000) / 10000);
+    });
+  }
 }
 
 // Pasa las posiciones guardadas de un libro (página, cinta, resaltados) entre hojas enteras y divididas.

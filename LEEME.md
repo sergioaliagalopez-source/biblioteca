@@ -33,6 +33,10 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   página por página. Los libros que ya estaban en la biblioteca se revisan la próxima vez que se abren (la cinta,
   la última página y los resaltados pasan a la nueva numeración). Se puede cambiar a mano en **Detalles › Hojas
   del PDF**.
+- **Encuadre de libro**: cada PDF se recompone con márgenes de libro impreso: el bloque de texto del mismo tamaño
+  y en el mismo lugar en todas las páginas, más margen hacia el lomo que hacia afuera, espejado entre páginas
+  izquierdas y derechas (la tapa queda entera). Se mide solo al importar o al abrir el libro; en **Detalles ›
+  Encuadre de las páginas** se puede volver al «Original del PDF».
 - **Leer**: clic en un libro. Sale de la estantería, se abre la tapa y pasas hojas con clic, flechas, rueda o deslizando.
 - **La cinta**: botón **Cinta** (o tecla `B`) y la cinta cae sobre la página. La próxima vez el libro se abre ahí.
   Si estás en otra página, la punta de la cinta asoma por abajo del lomo: clic en ella para volver.
