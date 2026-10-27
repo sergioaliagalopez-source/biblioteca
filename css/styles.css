@@ -772,14 +772,13 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 /* ---------- Pantallas pequeñas ---------- */
 .btn-gold { white-space: nowrap; }
 
-/* Con la lupa y la nube arriba, las categorías pasan a su propia fila antes de apretarse. */
-@media (max-width: 1600px) {
-  #topbar { grid-template-columns: auto 1fr; row-gap: 6px; }
-  .tabs { grid-column: 1 / -1; grid-row: 2; max-width: none; justify-content: center; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab { white-space: nowrap; }
-  .top-actions { grid-column: 2; grid-row: 1; }
-}
+/* Las categorías van siempre en su propia fila, centradas debajo de la marca y los botones:
+   en pantallas anchas compartían fila y se apretaban contra los íconos. */
+#topbar { grid-template-columns: auto 1fr; row-gap: 6px; }
+.tabs { grid-column: 1 / -1; grid-row: 2; max-width: none; justify-content: center; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { white-space: nowrap; }
+.top-actions { grid-column: 2; grid-row: 1; }
 
 @media (max-width: 900px) {
   #topbar { padding: max(14px, env(safe-area-inset-top)) 16px 26px; }

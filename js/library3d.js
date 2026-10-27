@@ -986,7 +986,11 @@ export class Library3D {
       this.minDist = this.maxDist * 0.6;
       this.bay ??= Math.floor(this.mainBays.length / 2);
     } else {
-      this.maxDist = Math.max(4.1, (BC.w / 2 + 0.25) / (halfTan * this.camera.aspect));
+      // Que entre el ancho de la estantería y que su copete quede debajo de la barra de arriba
+      // (en pantallas anchas la barra tapaba las lámparas y la parte alta).
+      const header = (document.getElementById('tabs')?.getBoundingClientRect().bottom || 0) + 6;
+      const room = Math.max(0.5, 1 - (2 * header) / h);
+      this.maxDist = Math.max(4.1, (BC.w / 2 + 0.25) / (halfTan * this.camera.aspect), (BC.h + 0.45 - 1.71) / (halfTan * room));
       this.minDist = 1.3;
     }
     this.targetDist = clamp(this.targetDist, this.minDist, this.maxDist);
