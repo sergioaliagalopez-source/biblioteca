@@ -111,6 +111,7 @@ export class Library3D {
   setTheme(id) {
     if (id === this.themeId || this.flying) return;
     this.wake();
+    this.adaptOff = false;
     this.disposeTheme();
     this.buildTheme(id);
     if (this.last) this.setBooks(...this.last);
@@ -1063,7 +1064,6 @@ export class Library3D {
     this.ratio = clamp(Math.round(r * 100) / 100, 0.7, this.maxRatio);
     this.renderer.setPixelRatio(this.ratio);
     this.renderer.setSize(innerWidth, innerHeight, false);
-    this.slowAvg = 1.2;
     this.fastFrames = 0;
   }
 
@@ -1122,10 +1122,21 @@ export class Library3D {
     // Si los cuadros tardan bastante más de lo previsto, se baja la resolución (y se sube cuando sobra).
     const took = now - this.lastFrame;
     this.lastFrame = now;
-    if (!this.paused && this.started && took < 200) {
+    if (!this.paused && this.started && took < 200 && !this.adaptOff) {
       this.slowAvg = this.slowAvg * 0.95 + (took / budget) * 0.05;
-      if (this.slowAvg > 1.45 && this.ratio > 0.7) this.setRatio(this.ratio - 0.15);
-      else if (this.slowAvg < 1.08 && this.ratio < this.maxRatio && ++this.fastFrames > 240) this.setRatio(this.ratio + 0.1);
+      const trial = this.ratioTrial;
+      if (trial && now - trial.at > 2500) {
+        // Si bajar la resolución no aceleró nada, el límite no es la placa de video (por ejemplo, el ahorro
+        // de energía del navegador fija 30 cuadros por segundo): se vuelve a la nitidez de antes y no se insiste.
+        this.ratioTrial = null;
+        if (this.slowAvg > trial.before * 0.85) {
+          this.setRatio(trial.from);
+          this.adaptOff = true;
+        }
+      } else if (!trial && this.slowAvg > 1.45 && this.ratio > 0.7) {
+        this.ratioTrial = { from: this.ratio, before: this.slowAvg, at: now };
+        this.setRatio(this.ratio - 0.2);
+      } else if (!trial && this.slowAvg < 1.08 && this.ratio < this.maxRatio && ++this.fastFrames > 240) this.setRatio(this.ratio + 0.1);
     }
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
