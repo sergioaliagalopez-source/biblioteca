@@ -872,3 +872,92 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 
 /* Safari: el libro 3D se dibuja por encima de las ventanas; mientras hay una abierta se oculta. */
 .webkit body.modal-open #reader .stage { visibility: hidden; }
+
+/* ---------- Modo enfoque ---------- */
+.focus-lock {
+  position: absolute; z-index: 3; top: max(14px, env(safe-area-inset-top)); right: max(20px, env(safe-area-inset-right));
+  display: none; align-items: center; gap: 8px; padding: 0 14px 0 0; height: 48px; border-radius: 999px;
+  background: rgba(16, 11, 7, 0.55); border: 1px solid var(--gold-line); color: var(--gold-2);
+  -webkit-user-select: none; user-select: none; touch-action: none; transition: opacity 0.5s;
+}
+#reader.focus .focus-lock { display: inline-flex; }
+#reader.focus.ui-hidden .focus-lock { opacity: 0.45; }
+.focus-lock .ring { width: 48px; height: 48px; transform: rotate(-90deg); }
+.focus-lock .ring circle { fill: none; stroke: rgba(198, 161, 91, 0.25); stroke-width: 2; }
+.focus-lock .ring .hold { stroke: var(--gold-2); stroke-dasharray: 132; stroke-dashoffset: 132; transition: stroke-dashoffset 0.25s; }
+.focus-lock.holding .ring .hold { stroke-dashoffset: 0; transition: stroke-dashoffset 2s linear; }
+.focus-lock .lock { position: absolute; left: 14px; top: 14px; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.focus-lock .time { font-family: var(--serif); font-size: 17px; letter-spacing: 0.06em; min-width: 3.2em; }
+#reader.focus .reader-top .r-tools, #reader.focus #rBack { visibility: hidden; }
+#reader.focus #rZoomOut, #reader.focus #rZoomIn, #reader.focus #rMode, #reader.focus #rSound, #reader.focus #rScrub,
+#reader.focus .reader-bar .sep, #reader.focus #hlList { display: none; }
+.focus-times { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 4px 0 14px; }
+.focus-tip { margin: 0; text-align: center; font-size: 15px; font-style: italic; color: var(--ink-soft); }
+.focus-goal { text-align: center; padding: 10px; border-radius: 4px; background: rgba(155, 122, 61, 0.12); color: var(--ink-soft); }
+.focus-goal.done { background: rgba(60, 110, 70, 0.12); color: #2c5a35; }
+
+/* Escuchar */
+.listen-btn.active { color: var(--gold-2); border-color: var(--gold-line); background: rgba(198, 161, 91, 0.12); }
+.listen-btn.active svg { animation: listen-pulse 1.6s ease-in-out infinite; }
+@keyframes listen-pulse { 50% { opacity: 0.45; } }
+
+/* Barra junto a la selección (Resaltar / Definir) */
+.sel-bar { position: fixed; z-index: 31; display: flex; gap: 8px; }
+.sel-bar[hidden] { display: none; }
+.sel-bar .hl-apply { position: static; }
+.sel-bar .hl-apply[hidden] { display: none; }
+
+/* Meta diaria */
+.goal-btn { position: relative; }
+.goal-btn svg { width: 30px; height: 30px; transform: rotate(-90deg); }
+.goal-btn circle { fill: none; stroke: rgba(198, 161, 91, 0.25); stroke-width: 2.5; }
+.goal-btn .fill { stroke: var(--gold-2); stroke-linecap: round; transition: stroke-dashoffset 0.6s; }
+.goal-btn.done .fill { stroke: #8fc79a; }
+.goal-btn span { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--serif); font-size: 12px; color: var(--cream); }
+.goal-big { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 4px 0 12px; }
+.goal-big svg { width: 92px; height: 92px; transform: rotate(-90deg); }
+.goal-big circle { fill: none; stroke: rgba(155, 122, 61, 0.2); stroke-width: 7; }
+.goal-big .fill { stroke: #9b7a3d; stroke-linecap: round; }
+.goal-big.done .fill { stroke: #3f7a4c; }
+.goal-big b { display: block; font-family: var(--serif); font-size: 28px; font-weight: 600; color: #24170d; }
+.goal-big span { font-style: italic; color: var(--ink-soft); }
+.goal-pick { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin-bottom: 18px; }
+.goal-pick span { font-style: italic; color: var(--ink-soft); margin-right: 4px; }
+
+/* Tarjeta de cita y diccionario */
+.quote-img { display: block; width: min(100%, 360px); margin: 10px auto 0; border-radius: 4px; box-shadow: 0 10px 30px rgba(40, 25, 10, 0.35); }
+.dict-body { max-height: 50vh; overflow-y: auto; }
+.dict-kind { margin: 12px 0 4px; font-family: var(--serif); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: #8a6a35; }
+.dict-list { margin: 0; padding-left: 22px; }
+.dict-list li { margin: 4px 0; line-height: 1.45; }
+.dict-from { margin: 0 0 6px; font-style: italic; color: var(--ink-soft); }
+.dict-src { margin: 14px 0 0; font-size: 14px; color: var(--ink-soft); }
+.dict-src a { color: #7a5a24; }
+
+@media (max-width: 600px) {
+  .goal-btn svg { width: 26px; height: 26px; }
+}
+
+/* Teléfono: la barra de arriba del lector deja lugar al título entre los botones */
+@media (max-width: 480px) {
+  .reader-top { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .r-title { max-width: none; min-width: 0; }
+  .r-title span { font-size: 16px; }
+  .r-title em { font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reader-top .r-tools { gap: 4px; }
+  .reader-top .r-btn { min-width: 34px; height: 34px; padding: 0 4px; }
+  .focus-lock { right: 12px; }
+}
+
+/* Teléfono: la barra de arriba entra entera con la meta, la lupa, el sonido y el menú */
+@media (max-width: 480px) {
+  .top-actions .icon-btn { width: 34px; height: 34px; }
+  .top-actions .btn-gold { padding: 7px 10px 6px; letter-spacing: 0.05em; }
+  .dev-badge { margin-left: 6px; padding: 2px 5px; }
+}
+@media (max-width: 380px) {
+  #topbar { padding-left: 10px; padding-right: 10px; }
+  .top-actions { gap: 0; }
+  #addBook { font-size: 0; padding: 7px 9px 6px; }
+  #addBook::before { content: '+ PDF'; font-size: 12px; }
+}

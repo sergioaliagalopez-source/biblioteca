@@ -21,8 +21,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
 export class Reader {
-  constructor({ onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish }) {
-    Object.assign(this, { onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish });
+  constructor({ onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish, onFocus, onFocusEnd, onShare, onDefine }) {
+    Object.assign(this, { onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish, onFocus, onFocusEnd, onShare, onDefine });
     this.el = $('#reader');
     this.stage = $('#stage');
     this.bk = $('#book3d');
@@ -306,7 +306,7 @@ export class Reader {
   captureSelection(saved) {
     const sel = window.getSelection();
     const range = saved || (sel && !sel.isCollapsed && sel.rangeCount ? sel.getRangeAt(0) : null);
-    $('#hlApply').hidden = true;
+    $('#selBar').hidden = true;
     if (!range || range.collapsed) return false;
     const rects = [...range.getClientRects()].filter((r) => r.width > 1 && r.height > 1);
     const text = selectedText(this.bk, range);
@@ -463,7 +463,10 @@ export class Reader {
 
   async close() {
     if (!this.isOpen || this.closing) return;
+    // En modo enfoque no se sale del libro sin soltar el candado.
+    if (this.focus) return this.toast?.('Mantén apretado el candado para salir del modo enfoque', 3000);
     this.closing = true;
+    this.stopSpeaking();
     while (this.busy) await wait(50);
     if (this.hlMode) await this.setHighlightMode(false);
     this.hideUI(true);
@@ -619,6 +622,9 @@ export class Reader {
 
   afterMove() {
     this.lastActivity = Date.now();
+    if (this.focus) this.realPages(this.s).forEach((p) => this.focus.pages.add(p));
+    // Si se pasó de hoja a mano mientras leía en voz alta, sigue leyendo desde la nueva página.
+    if (this.speaking && !this.speechTurning) this.speakSpread();
     if (this.s >= this.maxS) this.onFinish?.(this.book);
     if (this.hlMode) this.buildTextLayers();
     this.updateEdges();
@@ -680,6 +686,109 @@ export class Reader {
       btn.querySelector('span').textContent = label;
       btn.title = `Papel: ${label} (cambia entre día, sepia y noche)`;
     }
+  }
+
+  // ---------- Modo enfoque ----------
+  // Sólo el libro: pasar hojas, la cinta, resaltar y escuchar. Para salir hay que mantener apretado el candado
+  // dos segundos; si la sesión tiene tiempo, termina sola. Al terminar se avisa con un resumen.
+
+  startFocus(minutes) {
+    if (!this.isOpen) return;
+    this.focus = { start: Date.now(), end: minutes ? Date.now() + minutes * 60e3 : null, pages: new Set(this.realPages(this.s)), seconds: 0 };
+    this.el.classList.add('focus');
+    this.tickFocus();
+    clearInterval(this.focusT);
+    this.focusT = setInterval(() => this.tickFocus(), 1000);
+    this.showUI();
+  }
+
+  tickFocus() {
+    const f = this.focus;
+    if (!f) return;
+    const now = Date.now();
+    const sec = Math.max(0, Math.round(((f.end ?? now) - (f.end ? now : f.start)) / 1000));
+    $('#focusTime').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    if (f.end && now >= f.end) this.endFocus('time');
+  }
+
+  endFocus(reason) {
+    const f = this.focus;
+    if (!f) return;
+    this.focus = null;
+    clearInterval(this.focusT);
+    this.el.classList.remove('focus');
+    this.onFocusEnd?.({ reason, seconds: f.seconds, pages: Math.max(0, f.pages.size - 1), minutes: Math.round((Date.now() - f.start) / 60e3) });
+  }
+
+  // ---------- Leer en voz alta ----------
+
+  // Texto de una página, con los cortes de palabra con guion unidos.
+  async pageText(p) {
+    const { tc } = await this.getText(p);
+    return tc.items
+      .map((it) => it.str + (it.hasEOL ? '\n' : ' '))
+      .join('')
+      .replace(/(\p{L})-\s*\n\s*(\p{L})/gu, '$1$2')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Idioma del libro: español salvo que el texto sea claramente inglés.
+  speechLang(text) {
+    const words = text.toLowerCase().split(/\s+/).slice(0, 400);
+    const count = (list) => words.filter((w) => list.includes(w)).length;
+    const en = count(['the', 'and', 'of', 'to', 'is', 'that', 'with', 'was', 'for', 'it']);
+    const es = count(['el', 'la', 'de', 'que', 'y', 'los', 'las', 'en', 'con', 'por', 'una']);
+    return en > es * 1.3 ? 'en' : 'es';
+  }
+
+  toggleSpeech() {
+    if (this.speaking) return this.stopSpeaking();
+    if (!('speechSynthesis' in window)) return this.toast?.('Este navegador no puede leer en voz alta.', 4000);
+    this.speaking = true;
+    $('#rListen').classList.add('active');
+    this.speakSpread();
+  }
+
+  stopSpeaking() {
+    if (!this.speaking) return;
+    this.speaking = false;
+    this.speakTok = (this.speakTok || 0) + 1;
+    window.speechSynthesis?.cancel();
+    $('#rListen').classList.remove('active');
+  }
+
+  async speakSpread() {
+    const tok = (this.speakTok = (this.speakTok || 0) + 1);
+    speechSynthesis.cancel();
+    let text = '';
+    for (const p of this.realPages(this.s)) text += ' ' + (await this.pageText(p).catch(() => ''));
+    if (tok !== this.speakTok || !this.speaking) return;
+    text = text.trim();
+    if (!text) return this.afterSpoken(tok);
+    const lang = this.speechLang(text);
+    const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
+    const voice = voices.find((v) => /google|siri|enhanced|premium|natural/i.test(v.name)) || voices.find((v) => v.localService) || voices[0];
+    // Frases cortas: los teléfonos cortan los textos muy largos.
+    const chunks = text.match(/[^.!?;:]+[.!?;:]*\s*/g)?.flatMap((c) => (c.length > 220 ? c.match(/.{1,200}(\s|$)/g) : [c])) || [text];
+    chunks.forEach((c, i) => {
+      const u = new SpeechSynthesisUtterance(c.trim());
+      u.lang = voice?.lang || (lang === 'en' ? 'en-US' : 'es-ES');
+      if (voice) u.voice = voice;
+      u.rate = 0.98;
+      u.onstart = () => (this.lastActivity = Date.now());
+      if (i === chunks.length - 1) u.onend = () => this.afterSpoken(tok);
+      speechSynthesis.speak(u);
+    });
+  }
+
+  async afterSpoken(tok) {
+    if (tok !== this.speakTok || !this.speaking) return;
+    if (this.s >= this.maxS) return this.stopSpeaking();
+    this.speechTurning = true;
+    await this.go(this.s + 1);
+    this.speechTurning = false;
+    if (this.speaking) this.speakSpread();
   }
 
   // ---------- La cinta ----------
@@ -750,6 +859,21 @@ export class Reader {
     const bm = this.book?.bookmark;
     if (bm != null && !this.ribbonHere()) this.goToPage(bm);
     else this.toggleRibbon();
+  }
+
+  // Barra junto a la selección: «Resaltar», y «Definir» cuando es una sola palabra.
+  showSelBar(word) {
+    const bar = $('#selBar');
+    const r = this.savedRange.getBoundingClientRect();
+    $('#hlApply').style.setProperty('--c', (HL_COLORS[prefs.get('bib.hlColor') || 'yellow'] || HL_COLORS.yellow).dot);
+    $('#hlDefine').hidden = !word;
+    $('#hlDefine').dataset.word = word || '';
+    bar.hidden = false;
+    const w = bar.offsetWidth, h = bar.offsetHeight;
+    // Debajo de la selección para no tapar el menú propio del iPhone, que aparece arriba.
+    const below = r.bottom + 14 + h < innerHeight - 80;
+    bar.style.left = `${clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8)}px`;
+    bar.style.top = `${below ? r.bottom + 14 : Math.max(8, r.top - h - 54)}px`;
   }
 
   // ---------- Barra de herramientas ----------
@@ -828,7 +952,7 @@ export class Reader {
       else if (k === 'b' || k === 'B' || k === 'm' || k === 'M') this.toggleRibbon();
       else if (k === 'h' || k === 'H') this.setHighlightMode(!this.hlMode);
       else if (k === 'Escape' && this.hlMode) this.setHighlightMode(false);
-      else if (k === 'Escape') this.close();
+      else if (k === 'Escape' && !this.focus) this.close();
       else if (k === '+' || k === '=') this.setZoom(this.zoomIdx + 1);
       else if (k === '-') this.setZoom(this.zoomIdx - 1);
       else return;
@@ -868,7 +992,14 @@ export class Reader {
         down = null;
         // Con ratón se resalta al soltar; con el dedo, con el botón «Resaltar» (la selección del
         // iPhone se ajusta con las manijas y no termina al levantar el dedo).
-        if (e.pointerType === 'mouse' && this.captureSelection()) this.justHighlighted = Date.now();
+        if (e.pointerType === 'mouse') {
+          const sel = window.getSelection();
+          const word = sel && !sel.isCollapsed ? singleWord(sel.toString()) : null;
+          if (word && sel.anchorNode?.parentElement?.closest?.('.text-layer')) {
+            this.savedRange = sel.getRangeAt(0).cloneRange();
+            this.showSelBar(word);
+          } else if (this.captureSelection()) this.justHighlighted = Date.now();
+        }
         return;
       }
       if (!down || this.zoomIdx > 0) return;
@@ -906,6 +1037,31 @@ export class Reader {
     $('#rBack').addEventListener('click', () => this.close());
     $('#rInfo').addEventListener('click', () => this.onEdit?.(this.book));
     $('#rToc').addEventListener('click', () => this.onToc?.());
+    $('#rFocus').addEventListener('click', () => this.onFocus?.());
+    $('#rListen').addEventListener('click', () => this.toggleSpeech());
+    // Candado: mantener apretado dos segundos para salir del modo enfoque.
+    const lock = $('#focusLock');
+    let holdT = null;
+    const release = () => {
+      clearTimeout(holdT);
+      holdT = null;
+      lock.classList.remove('holding');
+    };
+    lock.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      lock.classList.add('holding');
+      holdT = setTimeout(() => {
+        release();
+        this.endFocus('manual');
+      }, 2000);
+    });
+    lock.addEventListener('pointerup', () => {
+      if (holdT) this.toast?.('Mantén apretado el candado para salir', 2200);
+      release();
+    });
+    lock.addEventListener('pointerleave', release);
+    lock.addEventListener('pointercancel', release);
+    lock.addEventListener('contextmenu', (e) => e.preventDefault());
     $('#rPaper').addEventListener('click', () => this.setPaper({ day: 'sepia', sepia: 'night', night: 'day' }[this.paper]));
     $('#rPrev').addEventListener('click', () => this.prev());
     $('#rNext').addEventListener('click', () => this.next());
@@ -925,6 +1081,7 @@ export class Reader {
       if (dot) this.recolorHighlight(id, dot.dataset.color);
       else if (e.target.closest('[data-act=del]')) this.removeHighlight(id);
       else if (e.target.closest('[data-act=note]')) this.onNote?.((this.book.highlights || []).find((h) => h.id === id));
+      else if (e.target.closest('[data-act=share]')) this.onShare?.((this.book.highlights || []).find((h) => h.id === id));
       else return;
       this.hidePop();
     });
@@ -934,22 +1091,15 @@ export class Reader {
     });
     // Con el dedo: mientras haya texto seleccionado en la página, aparece el botón «Resaltar».
     document.addEventListener('selectionchange', () => {
-      const btn = $('#hlApply');
+      const bar = $('#selBar');
       const sel = window.getSelection();
       const inLayer = sel?.anchorNode?.parentElement?.closest?.('.text-layer');
       if (!this.hlMode || this.lastPointer === 'mouse' || !sel || sel.isCollapsed || !inLayer) {
-        if (!btn.hidden && !this.applying) btn.hidden = true;
+        if (!bar.hidden && !this.applying && this.lastPointer !== 'mouse') bar.hidden = true;
         return;
       }
       this.savedRange = sel.getRangeAt(0).cloneRange();
-      const r = this.savedRange.getBoundingClientRect();
-      btn.style.setProperty('--c', (HL_COLORS[prefs.get('bib.hlColor') || 'yellow'] || HL_COLORS.yellow).dot);
-      btn.hidden = false;
-      const w = btn.offsetWidth, h = btn.offsetHeight;
-      // Debajo de la selección para no tapar el menú propio del iPhone, que aparece arriba.
-      const below = r.bottom + 14 + h < innerHeight - 80;
-      btn.style.left = `${clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8)}px`;
-      btn.style.top = `${below ? r.bottom + 14 : Math.max(8, r.top - h - 54)}px`;
+      this.showSelBar(singleWord(sel.toString()));
     });
     const apply = (e) => {
       e.preventDefault();
@@ -959,6 +1109,17 @@ export class Reader {
       this.applying = false;
     };
     $('#hlApply').addEventListener('pointerdown', apply);
+    $('#hlDefine').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const word = $('#hlDefine').dataset.word;
+      $('#selBar').hidden = true;
+      window.getSelection()?.removeAllRanges();
+      this.savedRange = null;
+      if (word) this.onDefine?.(word);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (this.lastPointer === 'mouse' && !e.target.closest('#selBar')) $('#selBar').hidden = true;
+    });
     $('#rZoomIn').addEventListener('click', () => this.setZoom(this.zoomIdx + 1));
     $('#rZoomOut').addEventListener('click', () => this.setZoom(this.zoomIdx - 1));
     $('#rMode').addEventListener('click', () => this.cycleMode());
@@ -978,6 +1139,12 @@ export class Reader {
       scrub.blur();
     });
   }
+}
+
+// Una sola palabra (para buscarla en el diccionario), o null.
+function singleWord(text) {
+  const t = text.trim();
+  return /^[\p{L}'’-]{2,32}$/u.test(t) ? t : null;
 }
 
 // ¿Dos resaltados cubren casi el mismo texto? (más de la mitad del más chico)

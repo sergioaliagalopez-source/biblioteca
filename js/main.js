@@ -10,6 +10,8 @@ import { THEMES, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js
 import { devMode, isOwned, paymentsReady, checkoutUrl, redeem, checkDevLink, bundleFor, ORDERS_URL, ownedRecords, mergeOwned } from './store.js';
 import { stats, duration, dayKey } from './stats.js';
 import { buildBackup, readBackup, saveFile } from './backup.js';
+import { define, raeUrl } from './dictionary.js';
+import { quoteCard } from './quotecard.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -25,6 +27,7 @@ const ICON = {
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
   pencil: '<svg viewBox="0 0 24 24"><path d="M15 4.5l4.5 4.5L9 19.5H4.5V15z"/><path d="M12.5 7l4.5 4.5"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V3.5M7.5 8L12 3.5 16.5 8"/><path d="M5 12.5v7h14v-7"/></svg>',
 };
 
 const state = {
@@ -68,6 +71,10 @@ async function boot() {
     onToc: showToc,
     onNote: editNote,
     onFinish: finishBook,
+    onFocus: showFocusStart,
+    onFocusEnd: showFocusSummary,
+    onShare: shareQuote,
+    onDefine: showDefinition,
   });
   reader.toast = toast;
 
@@ -95,6 +102,7 @@ async function boot() {
   updateSoundIcons();
   updateCloud();
   updateDevBadge();
+  updateGoal();
   if (devMsg) setTimeout(() => toast(devMsg, 4500), 1200);
   window.addEventListener('hashchange', async () => {
     const m = await checkDevLink();
@@ -123,7 +131,7 @@ async function loadLibrary() {
     else prefs.set('bib.seeded', '1');
   }
   state.books = await db.all('books');
-  if (state.active !== 'all' && !state.categories.some((c) => c.id === state.active)) state.active = 'all';
+  if (state.active !== 'all' && state.active !== 'done' && !state.categories.some((c) => c.id === state.active)) state.active = 'all';
 }
 
 async function reloadLibrary() {
@@ -310,8 +318,11 @@ const sortedCategories = () => [...state.categories].sort((a, b) => (a.order ?? 
 const categoryName = (id) => state.categories.find((c) => c.id === id)?.name;
 
 function refreshShelf() {
-  const list = (state.active === 'all' ? state.books : state.books.filter((b) => b.categoryId === state.active)).sort((a, b) => a.addedAt - b.addedAt);
-  const label = state.active === 'all' ? 'Biblioteca' : categoryName(state.active) || 'Biblioteca';
+  const done = state.active === 'done';
+  if (done && !state.books.some((b) => b.finishedAt)) state.active = 'all';
+  const pick = { all: () => state.books, done: () => state.books.filter((b) => b.finishedAt) }[state.active] || (() => state.books.filter((b) => b.categoryId === state.active));
+  const list = pick().sort((a, b) => (state.active === 'done' ? a.finishedAt - b.finishedAt : a.addedAt - b.addedAt));
+  const label = state.active === 'all' ? 'Biblioteca' : state.active === 'done' ? 'Terminados' : categoryName(state.active) || 'Biblioteca';
   lib.setBooks(list.map((b) => ({ id: b.id, title: b.title, author: b.author, color: b.color, aspect: b.aspect, pageCount: b.pageCount, coverUrl: coverURL(b) })), label);
   $('#empty').classList.toggle('show', list.length === 0);
   $('#emptyText').textContent = state.books.length === 0 ? 'Tu biblioteca espera su primer libro.' : `Aún no hay libros en «${label}».`;
@@ -321,7 +332,12 @@ function refreshShelf() {
 function renderTabs() {
   const counts = {};
   state.books.forEach((b) => (counts[b.categoryId] = (counts[b.categoryId] || 0) + 1));
-  const tabs = [{ id: 'all', name: 'Todos', n: state.books.length }, ...sortedCategories().map((c) => ({ id: c.id, name: c.name, n: counts[c.id] || 0 }))];
+  const finished = state.books.filter((b) => b.finishedAt).length;
+  const tabs = [
+    { id: 'all', name: 'Todos', n: state.books.length },
+    ...(finished ? [{ id: 'done', name: 'Terminados', n: finished }] : []),
+    ...sortedCategories().map((c) => ({ id: c.id, name: c.name, n: counts[c.id] || 0 })),
+  ];
   $('#tabs').innerHTML =
     tabs.map((t) => `<button class="tab ${t.id === state.active ? 'active' : ''}" data-id="${t.id}">${esc(t.name)}<sup>${t.n || ''}</sup></button>`).join('') +
     `<button class="tab add" data-add title="Nueva categoría">+</button>`;
@@ -446,6 +462,7 @@ function bookMenu(id, x, y) {
   showMenu(x, y, [
     { label: 'Abrir', action: () => openBook(id) },
     { label: 'Editar detalles…', action: () => editBook(id) },
+    { label: b.finishedAt ? 'Marcar como no terminado' : 'Marcar como terminado', action: () => toggleFinished(id) },
     { sep: true },
     { header: 'Mover a' },
     { label: 'Sin categoría', checked: !b.categoryId, action: () => moveBook(id, '') },
@@ -454,6 +471,15 @@ function bookMenu(id, x, y) {
     { sep: true },
     { label: 'Eliminar de la biblioteca', danger: true, action: () => deleteBook(id) },
   ]);
+}
+
+async function toggleFinished(id) {
+  const b = state.books.find((k) => k.id === id);
+  if (b.finishedAt) delete b.finishedAt;
+  else b.finishedAt = Date.now();
+  await db.put('books', b);
+  refreshShelf();
+  toast(b.finishedAt ? `«${b.title}» está en tus terminados` : `«${b.title}» volvió a «leyendo»`);
 }
 
 async function moveBook(id, categoryId) {
@@ -628,6 +654,7 @@ function showHighlights(book) {
       <span class="sw" style="background:${(HL_COLORS[h.color] || HL_COLORS.yellow).dot}"></span>
       <span class="body"><span class="pg">Página ${h.page}</span><q>${esc(h.text.length > 280 ? h.text.slice(0, 280) + '…' : h.text)}</q>${h.note ? `<span class="note">${esc(h.note)}</span>` : ''}</span>
       <button class="x note-btn" data-note="${h.id}" title="${h.note ? 'Editar la nota' : 'Escribir una nota'}">${ICON.pencil}</button>
+      <button class="x note-btn" data-share="${h.id}" title="Crear una tarjeta con esta cita">${ICON.share}</button>
       <button class="x" data-del="${h.id}" title="Quitar este resaltado">×</button>
     </div>`;
   const body = () =>
@@ -653,6 +680,8 @@ function showHighlights(book) {
             rerender();
             return;
           }
+          const share = e.target.closest('[data-share]');
+          if (share) return shareQuote((book.highlights || []).find((h) => h.id === share.dataset.share));
           const note = e.target.closest('[data-note]');
           if (note) {
             if (await editNote((book.highlights || []).find((h) => h.id === note.dataset.note))) rerender();
@@ -775,6 +804,7 @@ function finishBook(book) {
   db.put('books', book);
   const n = state.books.filter((b) => b.finishedAt).length;
   toast(`¡Terminaste «${book.title}»! ${n === 1 ? 'Es tu primer libro terminado.' : `Ya llevas ${n} libros terminados.`}`, 5000);
+  renderTabs();
 }
 
 // ---------- Estadísticas de lectura ----------
@@ -786,8 +816,141 @@ function trackReading() {
   const sec = Math.min(30, (now - lastTick) / 1000);
   lastTick = now;
   if (!state.reading || !reader.isOpen || document.hidden || now - reader.lastActivity > 5 * 60e3) return;
+  const before = stats.summary([]).today;
   stats.addSeconds(sec);
   state.reading.readSeconds = Math.round((state.reading.readSeconds || 0) + sec);
+  if (reader.focus) reader.focus.seconds += sec;
+  const goal = goalMinutes() * 60;
+  if (before < goal && before + sec >= goal) {
+    sound.ping();
+    toast(`¡Cumpliste tu meta de hoy: ${goalMinutes()} minutos de lectura!`, 5000);
+  }
+  updateGoal();
+}
+
+// Meta diaria de lectura (minutos), con un anillo arriba que se va llenando.
+const goalMinutes = () => +prefs.get('bib.goal') || 20;
+
+function updateGoal() {
+  const btn = $('#goalBtn');
+  if (!btn) return;
+  const today = stats.summary([]).today;
+  const k = Math.min(1, today / (goalMinutes() * 60));
+  const len = 2 * Math.PI * 14;
+  const fill = btn.querySelector('.fill');
+  fill.style.strokeDasharray = `${len}`;
+  fill.style.strokeDashoffset = `${len * (1 - k)}`;
+  btn.classList.toggle('done', k >= 1);
+  btn.querySelector('span').textContent = Math.round(today / 60);
+  btn.title = `Meta de hoy: ${Math.round(today / 60)} de ${goalMinutes()} minutos`;
+}
+
+// ---------- Modo enfoque ----------
+
+function showFocusStart() {
+  if (reader.focus) return;
+  const last = prefs.get('bib.focusMin') ?? '30';
+  modal(
+    `<div class="ornament">❦</div><h2>Modo enfoque</h2>
+     <p class="sub">Sólo el libro: pasar hojas, la cinta, resaltar y escuchar. Para salir, mantén apretado el candado dos segundos.</p>
+     <div class="focus-times">${[['15', '15 min'], ['30', '30 min'], ['45', '45 min'], ['0', 'Sin límite']].map(([v, l]) => `<button class="chip ${v === last ? 'on' : ''}" data-min="${v}">${l}</button>`).join('')}</div>
+     <p class="focus-tip">Para que el teléfono no te interrumpa, activa también el modo <b>Concentración</b> (en el iPhone: Centro de control › Concentración).</p>
+     <div class="actions"><span class="grow"></span><button class="btn-ghost" data-act="cancel">Cancelar</button><button class="btn-dark" data-act="start">Empezar</button></div>`,
+    {
+      onMount(card, close) {
+        let min = last;
+        card.addEventListener('click', (e) => {
+          const chip = e.target.closest('[data-min]');
+          if (chip) {
+            min = chip.dataset.min;
+            card.querySelectorAll('[data-min]').forEach((c) => c.classList.toggle('on', c === chip));
+            return;
+          }
+          const act = e.target.closest('[data-act]')?.dataset.act;
+          if (act === 'cancel') close(null);
+          else if (act === 'start') {
+            prefs.set('bib.focusMin', min);
+            close(null);
+            reader.startFocus(+min);
+            toast(+min ? `Enfoque por ${min} minutos. ¡Buena lectura!` : 'Enfoque sin límite. ¡Buena lectura!', 3000);
+          }
+        });
+      },
+    }
+  );
+}
+
+function showFocusSummary({ reason, seconds, pages, minutes }) {
+  const today = stats.summary([]).today;
+  const goal = goalMinutes();
+  const read = Math.max(minutes, Math.round(seconds / 60));
+  modal(
+    `<div class="ornament">❦</div><h2>${reason === 'time' ? '¡Sesión cumplida!' : 'Sesión terminada'}</h2>
+     <p class="sub">Leíste ${read ? `${read} minuto${read === 1 ? '' : 's'}` : 'un ratito'} y ${pages} página${pages === 1 ? '' : 's'} sin distracciones.</p>
+     <div class="focus-goal ${today >= goal * 60 ? 'done' : ''}">Hoy llevas ${Math.round(today / 60)} de ${goal} minutos de tu meta${today >= goal * 60 ? ' ✓' : ''}</div>
+     <div class="actions"><span class="grow"></span><button class="btn-dark" data-act="ok">Seguir leyendo</button></div>`,
+    {
+      onMount(card, close) {
+        card.querySelector('[data-act=ok]').onclick = () => close(null);
+      },
+    }
+  );
+}
+
+// ---------- Tarjetas de citas ----------
+
+async function shareQuote(h) {
+  const book = state.reading;
+  if (!h || !book) return;
+  reader.hidePop();
+  const blob = await quoteCard({ text: h.text, title: book.title, author: book.author, page: h.page, color: book.color, coverUrl: coverURL(book) });
+  const url = URL.createObjectURL(blob);
+  const name = `Cita - ${book.title.replace(/[\\/:*?"<>|]+/g, '').slice(0, 50).trim()}.png`;
+  await modal(
+    `<div class="ornament">❦</div><h2>Tu cita</h2>
+     <img class="quote-img" src="${url}" alt="Tarjeta con la cita">
+     <div class="actions"><span class="grow"></span><button class="btn-ghost" data-act="cancel">Cerrar</button><button class="btn-dark" data-act="save">Compartir</button></div>`,
+    {
+      onMount(card, close) {
+        card.querySelector('[data-act=cancel]').onclick = () => close(null);
+        card.querySelector('[data-act=save]').onclick = () => saveFile(blob, name, `Una cita de ${book.title}`).then((ok) => ok && close(null));
+      },
+    }
+  );
+  URL.revokeObjectURL(url);
+}
+
+// ---------- Diccionario ----------
+
+async function showDefinition(word) {
+  const body = (r) => {
+    if (!r) return `<p class="sub">No encontré «${esc(word)}» en el diccionario.</p>`;
+    let kind = '';
+    const items = r.defs
+      .map((d) => {
+        const head = d.kind !== kind ? `<div class="dict-kind">${esc((kind = d.kind))}</div>` : '';
+        return `${head}<li>${d.area ? `<em>${esc(d.area)}.</em> ` : ''}${esc(d.text)}</li>`;
+      })
+      .join('');
+    return `${r.from ? `<p class="dict-from">«${esc(r.from)}» es una forma de «${esc(r.word)}»</p>` : ''}<ol class="dict-list">${items}</ol>`;
+  };
+  modal(
+    `<div class="ornament">❦</div><h2>${esc(word)}</h2>
+     <div class="dict-body"><p class="sub">Buscando en el diccionario…</p></div>
+     <p class="dict-src">Fuente: Wikcionario · <a href="${raeUrl(word)}" target="_blank" rel="noopener">Ver en el diccionario de la RAE</a></p>
+     <div class="actions"><span class="grow"></span><button class="btn-dark" data-act="ok">Cerrar</button></div>`,
+    {
+      onMount(card, close) {
+        card.querySelector('[data-act=ok]').onclick = () => close(null);
+        define(word)
+          .catch(() => null)
+          .then((r) => {
+            card.querySelector('.dict-body').innerHTML = navigator.onLine === false ? '<p class="sub">Sin conexión: el diccionario necesita internet.</p>' : body(r);
+            if (r?.lang === 'en') card.querySelector('.dict-src').firstChild.textContent = 'Fuente: Wiktionary (inglés) · ';
+          });
+      },
+    }
+  );
 }
 
 function showStats() {
@@ -802,8 +965,16 @@ function showStats() {
     .sort((a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0))
     .slice(0, 3);
   const days = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+  const goal = goalMinutes();
+  const k = Math.min(1, s.today / (goal * 60));
+  const len = 2 * Math.PI * 40;
   modal(
     `<div class="ornament">❦</div><h2>Tu lectura</h2>
+     <div class="goal-big ${k >= 1 ? 'done' : ''}">
+       <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/><circle class="fill" cx="50" cy="50" r="40" style="stroke-dasharray:${len};stroke-dashoffset:${len * (1 - k)}"/></svg>
+       <div><b>${Math.round(s.today / 60)} / ${goal} min</b><span>${k >= 1 ? '¡Meta de hoy cumplida!' : 'Meta de hoy'}</span></div>
+     </div>
+     <div class="goal-pick"><span>Mi meta diaria:</span>${[10, 20, 30, 45, 60].map((m) => `<button class="chip ${m === goal ? 'on' : ''}" data-goal="${m}">${m} min</button>`).join('')}</div>
      <p class="sub">${s.streak ? `Llevas ${days(s.streak)} seguidos leyendo. ¡Sigue así!` : 'Lee un rato hoy para empezar una racha de días seguidos.'}</p>
      <div class="st-grid">
        <div><b>${duration(s.today)}</b><span>Hoy</span></div>
@@ -826,6 +997,14 @@ function showStats() {
       wide: true,
       onMount(card, close) {
         card.querySelector('[data-act=ok]').onclick = () => close(null);
+        card.querySelector('.goal-pick').addEventListener('click', (e) => {
+          const chip = e.target.closest('[data-goal]');
+          if (!chip) return;
+          prefs.set('bib.goal', chip.dataset.goal);
+          updateGoal();
+          close(null);
+          showStats();
+        });
       },
     }
   );
@@ -1668,7 +1847,7 @@ function bindUI() {
   });
   $('#tabs').addEventListener('contextmenu', (e) => {
     const t = e.target.closest('.tab');
-    if (!t || !t.dataset.id || t.dataset.id === 'all') return;
+    if (!t || !t.dataset.id || t.dataset.id === 'all' || t.dataset.id === 'done') return;
     e.preventDefault();
     const id = t.dataset.id;
     showMenu(e.clientX, e.clientY, [
@@ -1713,6 +1892,7 @@ function bindUI() {
   });
   $('#cloudBtn').addEventListener('click', cloudClick);
   $('#moreBtn').addEventListener('click', moreMenu);
+  $('#goalBtn').addEventListener('click', showStats);
   $('#backupInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';

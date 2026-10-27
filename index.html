@@ -43,6 +43,9 @@
     <div class="brand"><span class="monogram">B</span><span class="brand-name">Biblioteca</span><span class="dev-badge" id="devBadge" title="Modo desarrollador: todo desbloqueado" hidden>DEV</span></div>
     <nav id="tabs" class="tabs" aria-label="Categorías"></nav>
     <div class="top-actions">
+      <button class="icon-btn goal-btn" id="goalBtn" title="Meta de lectura de hoy" aria-label="Meta de lectura de hoy">
+        <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="14"/><circle class="fill" cx="18" cy="18" r="14"/></svg><span></span>
+      </button>
       <button class="icon-btn" id="searchBtn" title="Buscar un libro (Ctrl+K)" aria-label="Buscar un libro">
         <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
       </button>
@@ -115,6 +118,9 @@
       </button>
       <div class="r-title"><span id="rTitle"></span><em id="rAuthor"></em></div>
       <div class="r-tools">
+        <button class="r-btn text" id="rFocus" title="Modo enfoque: sólo el libro">
+          <svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg><span>Enfoque</span>
+        </button>
         <button class="r-btn text" id="rToc" title="Índice de capítulos e ir a una página">
           <svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.5M4.5 12h.5M4.5 18h.5"/></svg><span>Índice</span>
         </button>
@@ -126,6 +132,12 @@
         </button>
       </div>
     </div>
+
+    <button class="focus-lock" id="focusLock" aria-label="Mantén apretado para salir del modo enfoque">
+      <svg class="ring" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21"/><circle class="hold" cx="24" cy="24" r="21"/></svg>
+      <svg class="lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
+      <span class="time" id="focusTime"></span>
+    </button>
 
     <div class="stage" id="stage">
       <div class="book-wrap">
@@ -170,6 +182,9 @@
       <button class="r-btn text hl-btn" id="rHighlight" title="Resaltar texto (H)">
         <svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5z"/><path d="M4 21h16"/></svg><span>Resaltar</span>
       </button>
+      <button class="r-btn text listen-btn" id="rListen" title="Escuchar el libro en voz alta">
+        <svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6.5" rx="1.5"/><rect x="16.5" y="14" width="4" height="6.5" rx="1.5"/></svg><span>Escuchar</span>
+      </button>
       <span class="sep"></span>
       <button class="r-btn" id="rZoomOut" title="Alejar (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
       <button class="r-btn" id="rZoomIn" title="Acercar (+)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
@@ -177,7 +192,7 @@
       <button class="r-btn" id="rSound" title="Sonido" aria-label="Ajustes de sonido"></button>
     </div>
     <div class="hl-bar" id="hlBar">
-      <span class="hl-hint">Selecciona el texto para resaltarlo</span>
+      <span class="hl-hint">Selecciona texto para resaltarlo, o una palabra para buscarla</span>
       <button class="hl-dot" data-color="yellow" title="Amarillo" style="--c:#f2cf55"></button>
       <button class="hl-dot" data-color="green" title="Verde" style="--c:#93cf8b"></button>
       <button class="hl-dot" data-color="pink" title="Rosa" style="--c:#f19ab5"></button>
@@ -187,7 +202,10 @@
       <button class="r-btn text" id="hlList" title="Ver todos los resaltados de este libro">Mis resaltados <b id="hlCount"></b></button>
       <button class="r-btn text" id="hlDone" title="Terminar de resaltar (Esc)">Listo</button>
     </div>
-    <button class="hl-apply" id="hlApply" hidden><i></i>Resaltar</button>
+    <div class="sel-bar" id="selBar" hidden>
+      <button class="hl-apply" id="hlApply"><i></i>Resaltar</button>
+      <button class="hl-apply" id="hlDefine" hidden>Definir</button>
+    </div>
     <div class="hl-pop" id="hlPop" hidden>
       <button class="hl-dot" data-color="yellow" title="Amarillo" style="--c:#f2cf55"></button>
       <button class="hl-dot" data-color="green" title="Verde" style="--c:#93cf8b"></button>
@@ -196,6 +214,7 @@
       <button class="hl-dot" data-color="orange" title="Naranja" style="--c:#f2aa62"></button>
       <span class="sep"></span>
       <button class="r-btn text" data-act="note" title="Escribir una nota sobre este resaltado">Nota</button>
+      <button class="r-btn text" data-act="share" title="Crear una tarjeta con esta cita para compartir">Compartir</button>
       <button class="r-btn text" data-act="del" title="Quitar este resaltado">Quitar</button>
     </div>
   </section>

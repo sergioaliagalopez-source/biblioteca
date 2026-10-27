@@ -42,6 +42,20 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
 - **Papel**: botón de arriba en el lector que cambia entre **Día**, **Sepia** (más cálido) y **Noche** (letras claras
   sobre fondo oscuro, para leer a oscuras).
 - **Progreso**: al pasar el ratón (o mantener apretado) un libro se ve la página y el porcentaje leído.
+- **Modo enfoque**: botón del candado arriba en el lector. Eliges 15, 30 o 45 minutos (o sin límite) y quedan sólo
+  pasar hojas, la cinta, resaltar y escuchar; no se puede volver a la biblioteca. Para salir, **mantén apretado el
+  candado dos segundos**. Al terminar aparece un resumen con los minutos y las páginas leídas.
+  (La app no puede silenciar el teléfono: para eso activa también el modo Concentración del iPhone.)
+- **Escuchar**: botón de los auriculares. El teléfono o la computadora lee las páginas en voz alta y pasa las hojas
+  solo. Vuelve a tocarlo para parar.
+- **Diccionario**: en **Resaltar**, selecciona una sola palabra y toca **Definir** (fuente: Wikcionario, con enlace
+  a la RAE). Las formas como «dioses» o «tenía» muestran la palabra base.
+- **Tarjetas de citas**: toca un resaltado → **Compartir** (o el ícono de compartir en «Mis resaltados») y se arma
+  una imagen elegante con la cita, el título y la portada, lista para redes.
+- **Meta diaria**: el anillo de arriba (junto a la lupa) se llena con los minutos leídos hoy. La meta se cambia en
+  las estadísticas (10, 20, 30, 45 o 60 minutos); al cumplirla suena una campanita.
+- **Terminados**: la pestaña «Terminados» junta los libros que acabaste. También se puede marcar o desmarcar un
+  libro como terminado desde su menú.
 - **Buscar**: la lupa de arriba (o `Ctrl+K`, o la tecla `/`). Escribe parte del título, el autor o la categoría
   (sin importar tildes); con `↑` `↓` eliges y `Enter` abre el libro. Sin escribir nada, muestra los leídos recientemente.
 - **Fondos**: botón de abajo a la derecha. Seis ambientes, cada uno con su sonido.
