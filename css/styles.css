@@ -1012,3 +1012,47 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 .card .focus-custom input { border: none; border-bottom: 1px solid rgba(80, 55, 30, 0.35); background: transparent; color: var(--ink); outline: none; border-radius: 0; }
 .card .focus-custom input:focus { border-bottom-color: #a5813f; }
 .card .focus-custom label > span { display: inline; margin: 0; font-family: var(--text); font-size: 17px; font-style: italic; letter-spacing: 0; text-transform: none; color: var(--ink-soft); }
+
+/* ---------- Colecciones de fondos: pestañas Incluidos · F1 · Deportes ---------- */
+.theme-cols {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  width: min(560px, 100%); margin: 0 auto 10px; padding: 5px;
+  border: 1px solid var(--gold-line); border-radius: 999px; background: rgba(255, 255, 255, 0.03);
+}
+.tcol {
+  position: relative; display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 12px; border: none; border-radius: 999px; background: none;
+  font-family: var(--serif); font-size: 17px; letter-spacing: 0.06em; color: var(--cream-dim);
+  transition: background 0.25s, color 0.25s;
+}
+.tcol svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.tcol svg .fill { fill: currentColor; stroke: none; }
+.tcol sup { font-family: var(--text); font-size: 11px; color: var(--gold); opacity: 0.85; }
+.tcol:hover { color: var(--cream); }
+.tcol.on { background: linear-gradient(to bottom, #d6b373, #b28a46); color: #1a120b; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
+.tcol.on sup { color: #3a2716; }
+.tcol-cur { flex: none; width: 6px; height: 6px; margin-left: -2px; border-radius: 50%; background: var(--gold-2); }
+.tcol.on .tcol-cur { background: #1a120b; box-shadow: none; }
+.tcol-intro { margin: 0 0 16px; text-align: center; font-style: italic; font-size: 15px; color: var(--cream-dim); }
+.theme-cards { grid-auto-columns: minmax(210px, 268px); justify-content: safe center; }
+.theme-cards.swap > * { animation: tcol-in 0.42s cubic-bezier(.2, .8, .2, 1) both; }
+.theme-cards.swap > :nth-child(2) { animation-delay: 0.05s; }
+.theme-cards.swap > :nth-child(3) { animation-delay: 0.1s; }
+.theme-cards.swap > :nth-child(4) { animation-delay: 0.15s; }
+@keyframes tcol-in { from { opacity: 0; transform: translateY(12px); } }
+/* Tarjeta «Próximamente» */
+.theme-card.soon { border-style: dashed; background: rgba(255, 255, 255, 0.015); cursor: default; }
+.theme-card.soon:hover { transform: none; box-shadow: none; border-color: rgba(198, 161, 91, 0.22); }
+.soon-img { display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(198, 161, 91, 0.12), rgba(0, 0, 0, 0.2)); color: var(--gold); }
+.soon-img::after { display: none; }
+.soon-img svg { width: 46px; height: 46px; fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; opacity: 0.8; }
+.soon-img svg .fill { fill: currentColor; stroke: none; }
+.theme-card.soon .tc-name { color: var(--cream-dim); }
+
+@media (max-width: 900px) {
+  .theme-cards { grid-auto-columns: 44%; }
+}
+@media (max-width: 480px) {
+  .theme-cards { grid-auto-columns: 78%; }
+  .tcol { font-size: 15px; gap: 6px; padding: 0 6px; }
+}

@@ -2,7 +2,7 @@
 // Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
 // viejos con nuevos); sin conexión usa la copia guardada.
 // Al publicar una versión nueva, sube el número de VERSION.
-const VERSION = 'biblioteca-v16';
+const VERSION = 'biblioteca-v17';
 
 const SHELL = [
   './',

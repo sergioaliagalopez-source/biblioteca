@@ -65,7 +65,10 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   libro como terminado desde su menú.
 - **Buscar**: la lupa de arriba (o `Ctrl+K`, o la tecla `/`). Escribe parte del título, el autor o la categoría
   (sin importar tildes); con `↑` `↓` eliges y `Enter` abre el libro. Sin escribir nada, muestra los leídos recientemente.
-- **Fondos**: botón de abajo a la derecha. Seis ambientes, cada uno con su sonido.
+- **Fondos**: botón de abajo a la derecha. Seis ambientes, cada uno con su sonido, ordenados en colecciones
+  con pestañas: **Incluidos** (se ven al abrir), **F1** y **Deportes**. Un punto dorado marca la pestaña donde está
+  el fondo que usas ahora, y las colecciones nuevas muestran una tarjeta «Próximamente».
+  Para sumar un fondo a una colección basta con ponerle `collection` en `js/themes.js`.
   Incluidos con la app: **Biblioteca clásica** (chimenea), **Mansión frente al mar** (olas),
   **Salón de jazz** (jazz suave) y **Ático moderno** (lluvia tranquila y piano, con relámpagos y truenos).
   De pago, 1,99 US$ cada uno (o los dos juntos en un paquete, cuando esté creado):

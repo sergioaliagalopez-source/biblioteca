@@ -1,9 +1,17 @@
 // Catálogo de fondos que ve el usuario: nombre, ambiente, sonido y precio (0 = incluido con la app).
 import { devMode, isOwned } from './store.js';
 
+// Colecciones del panel de fondos: al abrirlo se ven los incluidos; F1 y Deportes son pestañas aparte.
+export const COLLECTIONS = [
+  { id: 'incluidos', name: 'Incluidos', mood: 'Los cuatro ambientes que vienen con la app' },
+  { id: 'f1', name: 'F1', mood: 'Velocidad, boxes y el rugido de la recta' },
+  { id: 'deportes', name: 'Deportes', mood: 'Estadios, canchas y trofeos de campeón' },
+];
+
 export const THEMES = [
   {
     id: 'clasica',
+    collection: 'incluidos',
     name: 'Biblioteca clásica',
     mood: 'Caoba, papel verde y el fuego de la chimenea',
     sound: 'fire',
@@ -12,6 +20,7 @@ export const THEMES = [
   },
   {
     id: 'mansion',
+    collection: 'incluidos',
     name: 'Mansión frente al mar',
     mood: 'Mármol, oro y el océano al atardecer',
     sound: 'ocean',
@@ -20,6 +29,7 @@ export const THEMES = [
   },
   {
     id: 'jazz',
+    collection: 'incluidos',
     name: 'Salón de jazz',
     mood: 'Nogal, art déco y un vinilo girando',
     sound: 'jazz',
@@ -28,6 +38,7 @@ export const THEMES = [
   },
   {
     id: 'atico',
+    collection: 'incluidos',
     name: 'Ático moderno',
     mood: 'Roble, luces de la ciudad y lluvia en el vidrio',
     sound: 'city',
@@ -36,6 +47,7 @@ export const THEMES = [
   },
   {
     id: 'paddock',
+    collection: 'f1',
     name: 'Paddock Club',
     mood: 'Rojo Maranello, cascos y autos pasando por la recta',
     sound: 'paddock',
@@ -44,6 +56,7 @@ export const THEMES = [
   },
   {
     id: 'tierra',
+    collection: 'deportes',
     name: 'Tennis',
     mood: 'París, arcilla roja y trofeos de campeón',
     sound: 'paris',

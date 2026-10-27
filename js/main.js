@@ -7,7 +7,7 @@ import { Reader, HL_COLORS } from './reader.js';
 import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects } from './pdfdoc.js';
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
-import { THEMES, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js';
+import { THEMES, COLLECTIONS, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js';
 import { devMode, isOwned, paymentsReady, checkoutUrl, redeem, checkDevLink, bundleFor, ORDERS_URL, ownedRecords, mergeOwned } from './store.js';
 import { stats, duration, dayKey } from './stats.js';
 import { buildBackup, readBackup, saveFile } from './backup.js';
@@ -1609,14 +1609,27 @@ function updateThemeButton() {
   $('#themeBtn').innerHTML = `${ICON.shelf}<span>${esc(themeById(state.theme).name)}</span>`;
 }
 
-function renderThemeCards() {
+let themeCol = 'incluidos';
+
+// Panel de fondos: pestañas de colección (Incluidos, F1, Deportes) y las tarjetas de la elegida.
+function renderThemeCards(animate = false) {
   const price = (t) => {
     if (t.price === 0) return '<span class="tc-price">Incluido</span>';
     if (isOwned(t.id)) return '<span class="tc-price">Comprado</span>';
     if (devMode()) return `<span class="tc-price">${priceLabel(t)} <em>Desarrollador</em></span>`;
     return `<span class="tc-price buy">${ICON.lock}${priceLabel(t)}</span>`;
   };
-  $('#themeCards').innerHTML = THEMES.map(
+  const current = themeById(state.theme).collection;
+  $('#themeCols').innerHTML = COLLECTIONS.map((c) => {
+    const n = THEMES.filter((t) => t.collection === c.id).length;
+    return `<button class="tcol ${c.id === themeCol ? 'on' : ''}" role="tab" aria-selected="${c.id === themeCol}" data-col="${c.id}">
+      ${c.id === 'incluidos' ? ICON.shelf : ''}<span>${esc(c.name)}</span><sup>${n}</sup>${c.id === current ? '<i class="tcol-cur" title="Tu fondo actual está aquí"></i>' : ''}
+    </button>`;
+  }).join('');
+  const col = COLLECTIONS.find((c) => c.id === themeCol);
+  const list = THEMES.filter((t) => t.collection === themeCol);
+  $('#themeColIntro').textContent = `${col.mood} · ${list.length} ${list.length === 1 ? 'fondo' : 'fondos'}`;
+  const cards = list.map(
     (t) => `
     <button class="theme-card ${t.id === state.theme ? 'on' : ''} ${isUnlocked(t) ? '' : 'locked'}" data-id="${t.id}">
       <span class="tc-img" style="background-image:url('${t.preview}')"><span class="tc-check">${ICON.check}</span><span class="tc-lock">${ICON.lock}</span></span>
@@ -1626,12 +1639,33 @@ function renderThemeCards() {
         <span class="tc-meta"><span class="tc-sound">${ICON.speaker}${esc(AMBIENTS[t.sound])}</span>${price(t)}</span>
       </span>
     </button>`
-  ).join('');
+  );
+  // En las colecciones que van a crecer, una tarjeta avisa que vienen más.
+  if (themeCol !== 'incluidos') {
+    cards.push(`
+    <div class="theme-card soon" aria-hidden="true">
+      <span class="tc-img soon-img"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span>
+      <span class="tc-body">
+        <span class="tc-name">Próximamente</span>
+        <span class="tc-mood">Más fondos de ${esc(col.name)} en camino</span>
+      </span>
+    </div>`);
+  }
+  const box = $('#themeCards');
+  box.innerHTML = cards.join('');
+  box.scrollLeft = 0;
+  if (animate) {
+    box.classList.remove('swap');
+    void box.offsetWidth;
+    box.classList.add('swap');
+  }
 }
 
 function openThemes() {
   if (state.reading || switchingTheme) return;
   closeSoundPanel();
+  // Siempre abre en los fondos incluidos; las otras colecciones están en sus pestañas.
+  themeCol = 'incluidos';
   renderThemeCards();
   $('#themes').hidden = false;
   requestAnimationFrame(() => $('#themes').classList.add('in'));
@@ -1970,6 +2004,14 @@ function bindUI() {
 
   $('#themeBtn').addEventListener('click', openThemes);
   $('#themes').addEventListener('click', (e) => {
+    const col = e.target.closest('[data-col]');
+    if (col) {
+      if (col.dataset.col !== themeCol) {
+        themeCol = col.dataset.col;
+        renderThemeCards(true);
+      }
+      return;
+    }
     if (e.target.closest('[data-restore]')) {
       closeThemes();
       return showRestore();
