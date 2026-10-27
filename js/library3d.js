@@ -11,6 +11,7 @@ import {
   RACKET_LOOKS, buildRacket, buildSilverCup, buildTrophyCase, buildJumboBall, buildRacketFrame, buildBallCans, buildClayJar, buildPoster,
 } from './tennis.js';
 import { classicHelmet, HELMET_COLORS, VINTAGE, buildOldPhoto } from './museum.js';
+import { mergeStatic } from './batch.js';
 
 const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
@@ -22,11 +23,22 @@ export class Library3D {
     this.canvas = canvas;
     this.handlers = handlers;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    // Resolución: hasta 1,5× (más no se nota en la estantería y pesa mucho); baja sola si la PC no da abasto.
+    this.maxRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    this.ratio = this.maxRatio;
+    this.renderer.setPixelRatio(this.ratio);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Las sombras se recalculan cuando algo cambia (y unas pocas veces por segundo), no en cada cuadro.
+    this.renderer.shadowMap.autoUpdate = false;
+    this.shadowDirty = true;
+    this.frame = 0;
+    this.lastActive = performance.now();
+    this.lastFrame = 0;
+    this.slowAvg = 0;
+    this.fastFrames = 0;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0b0806);
@@ -89,15 +101,21 @@ export class Library3D {
     this.camera.far = this.theme.far ?? 40;
     this.camera.updateProjectionMatrix();
     this.theme.build(this);
+    // Junta las piezas fijas que comparten material: muchas menos llamadas de dibujo por cuadro.
+    mergeStatic(this.room, { keep: new Set([this.unitBox]) });
+    this.shadowDirty = true;
     this.buildParticles(this.theme.particles);
   }
 
   // Cambia de fondo y vuelve a acomodar los libros en la nueva estantería.
   setTheme(id) {
     if (id === this.themeId || this.flying) return;
+    this.wake();
     this.disposeTheme();
     this.buildTheme(id);
     if (this.last) this.setBooks(...this.last);
+    // Compila los sombreadores del fondo nuevo mientras la cortina está puesta (así no se traba al aparecer).
+    this.ready = this.renderer.compileAsync ? this.renderer.compileAsync(this.scene, this.camera).catch(() => {}) : Promise.resolve();
   }
 
   disposeTheme() {
@@ -360,6 +378,12 @@ export class Library3D {
       this.decorate(seg, start, rnd);
     }
     this.setPlaque(label);
+    mergeStatic(group, {
+      skip: (o) => o.userData.book || this.spinners.includes(o),
+      keep: new Set([this.unitBox]),
+      track: this.dynamic,
+    });
+    this.shadowDirty = true;
   }
 
   clearDynamic() {
@@ -948,6 +972,7 @@ export class Library3D {
     const c = this.canvas;
     window.addEventListener('resize', () => this.resize());
     c.addEventListener('pointermove', (e) => {
+      this.wake();
       this.pointer.x = e.clientX;
       this.pointer.y = e.clientY;
       if (this.downAt && Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 10) clearTimeout(this.pressTimer);
@@ -963,6 +988,7 @@ export class Library3D {
       this.needsPick = true;
     });
     c.addEventListener('pointerdown', (e) => {
+      this.wake();
       this.downAt = { x: e.clientX, y: e.clientY };
       this.longPressed = false;
       this.touch = e.pointerType !== 'mouse';
@@ -1007,6 +1033,7 @@ export class Library3D {
       if (this.hovered && !this.frozen) this.handlers.onContext?.(this.hovered.userData.book.id, e.clientX, e.clientY);
     });
     c.addEventListener('wheel', (e) => {
+      this.wake();
       if (this.frozen) return;
       e.preventDefault();
       this.targetDist = clamp(this.targetDist + e.deltaY * 0.0022, this.minDist, this.maxDist);
@@ -1032,7 +1059,16 @@ export class Library3D {
     this.handlers.onHover?.(m ? m.userData.book.id : null, this.pointer.x, this.pointer.y);
   }
 
+  setRatio(r) {
+    this.ratio = clamp(Math.round(r * 100) / 100, 0.7, this.maxRatio);
+    this.renderer.setPixelRatio(this.ratio);
+    this.renderer.setSize(innerWidth, innerHeight, false);
+    this.slowAvg = 1.2;
+    this.fastFrames = 0;
+  }
+
   resize() {
+    this.wake();
     const w = innerWidth, h = innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -1067,13 +1103,30 @@ export class Library3D {
   // Tramo visible en el teléfono (0 = izquierda).
   setBay(i) {
     if (!this.phone) return;
+    this.wake();
     const n = this.mainBays.length;
     this.bay = clamp(i, 0, n - 1);
     this.handlers.onBay?.(this.bay, n);
   }
 
-  loop() {
+  // Marca que hay interacción: la escena va a 60 cuadros por segundo un rato; en reposo, a 30.
+  wake() {
+    this.lastActive = performance.now();
+  }
+
+  loop(now = performance.now()) {
     requestAnimationFrame(this.loop);
+    const busy = this.tweens.length || this.flying || this.hovered || now - this.lastActive < 1500;
+    const budget = busy ? 1000 / 60 : 1000 / 30;
+    if (now - this.lastFrame < budget - 3) return;
+    // Si los cuadros tardan bastante más de lo previsto, se baja la resolución (y se sube cuando sobra).
+    const took = now - this.lastFrame;
+    this.lastFrame = now;
+    if (!this.paused && this.started && took < 200) {
+      this.slowAvg = this.slowAvg * 0.95 + (took / budget) * 0.05;
+      if (this.slowAvg > 1.45 && this.ratio > 0.7) this.setRatio(this.ratio - 0.15);
+      else if (this.slowAvg < 1.08 && this.ratio < this.maxRatio && ++this.fastFrames > 240) this.setRatio(this.ratio + 0.1);
+    }
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
     if (this.tweens.length) {
@@ -1132,6 +1185,11 @@ export class Library3D {
       pos.needsUpdate = true;
     }
 
+    // Sombras: al cambiar algo, mientras un libro se mueve, y unas 5 veces por segundo por lo que se anima solo.
+    if (this.shadowDirty || busy || ++this.frame % 6 === 0) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowDirty = false;
+    }
     this.renderer.render(this.scene, this.camera);
     if (!this.started) {
       this.started = true;

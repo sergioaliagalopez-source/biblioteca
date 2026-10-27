@@ -1,15 +1,23 @@
 // Lectura y renderizado de PDF con PDF.js.
-import * as pdfjsLib from 'pdfjs-dist';
-
+// PDF.js pesa bastante: se carga recién la primera vez que hace falta (o en un rato libre después de abrir).
 // Las librerías van incluidas en la carpeta vendor/ para que la app funcione sin internet;
 // las tablas de fuentes (sólo para algunos PDF) se piden al CDN cuando hacen falta.
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168';
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdf.worker.min.mjs', document.baseURI).href;
+let loading = null;
+export let pdfUtil = null;
 
-export const pdfUtil = pdfjsLib.Util;
+export function loadPdfjs() {
+  loading ??= import('pdfjs-dist').then((lib) => {
+    lib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdf.worker.min.mjs', document.baseURI).href;
+    pdfUtil = lib.Util;
+    return lib;
+  });
+  return loading;
+}
 
 export async function openPdf(blob) {
-  const data = new Uint8Array(await blob.arrayBuffer());
+  const [pdfjsLib, buf] = await Promise.all([loadPdfjs(), blob.arrayBuffer()]);
+  const data = new Uint8Array(buf);
   return pdfjsLib.getDocument({
     data,
     cMapUrl: `${PDFJS}/cmaps/`,

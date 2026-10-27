@@ -200,6 +200,7 @@ function curtains(lib, xs, z) {
     c.position.set(x, 2.3, z);
     c.userData.seed = i * 2.1;
     c.userData.x = x;
+    c.userData.dynamic = true;
     lib.room.add(c);
     return c;
   });
@@ -470,6 +471,7 @@ export const SCENES = {
       mainCase(lib, { back: false });
       lib.fx.curtains = curtains(lib, [-(BC.w / 2 + 0.85), BC.w / 2 + 0.85], BC.z - 0.4);
       lib.fx.fronds = palm(lib, 2.85, FRONT_Z + 0.55);
+      lib.fx.fronds.forEach((f) => (f.userData.dynamic = true));
       lib.room.add(new THREE.HemisphereLight(0xfff3e4, 0xcdb79c, 1.05), new THREE.AmbientLight(0xffffff, 0.22));
       keyLight(lib, 0xfff1de, 24);
       baySpots(lib, 0xfff0dc, 2.5);
@@ -560,6 +562,7 @@ export const SCENES = {
       modernCase(lib);
       arcLamp(lib, -3.35, FRONT_Z + 0.5);
       lib.fx.leaves = bigPlant(lib, 2.85, FRONT_Z + 0.45);
+      lib.fx.leaves.forEach((l) => (l.userData.dynamic = true));
       lib.fx.hemi = new THREE.HemisphereLight(0x9fb4d8, 0x2a2622, 0.5);
       lib.room.add(lib.fx.hemi, new THREE.AmbientLight(0xc8d4ff, 0.1));
       keyLight(lib, 0xffe2c0, 20);
@@ -684,6 +687,7 @@ SCENES.paddock = {
     // los autos de la carrera, esperando fuera de cuadro
     fx.cars = LIVERIES.slice(0, 4).map((liv) => {
       const car = buildF1Car(liv);
+      car.userData.dynamic = true;
       car.position.set(-200, -1.6, -14.4);
       car.visible = false;
       lib.room.add(car);
@@ -870,7 +874,6 @@ SCENES.museo = {
     const vitrine = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.8, 0.62), lib.mat.acrylic);
     vitrine.position.set(3.1, 1.4, FRONT_Z + 0.4);
     lib.room.add(cup, helmet, vitrine);
-    lib.room.add(new THREE.HemisphereLight(0xffe6c8, 0x1a1210, 0.3));
     keyLight(lib, 0xffe0b8, 26);
     baySpots(lib, 0xffd8a8, 4);
   },

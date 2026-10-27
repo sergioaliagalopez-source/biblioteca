@@ -4,7 +4,7 @@ import { clamp } from './textures.js';
 import { folderSupported, pickFolder, hasPermission, FolderStore } from './cloud.js';
 import { Library3D } from './library3d.js';
 import { Reader, HL_COLORS } from './reader.js';
-import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects } from './pdfdoc.js';
+import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects, loadPdfjs } from './pdfdoc.js';
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
 import { THEMES, COLLECTIONS, AMBIENTS, themeById, isUnlocked, priceLabel } from './themes.js';
@@ -119,6 +119,9 @@ async function boot() {
     if (!isUnlocked(themeById(state.theme))) chooseTheme('clasica');
   });
   registerServiceWorker();
+  // PDF.js se prepara en un rato libre, para que abrir el primer libro no espere.
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
+  idle(() => loadPdfjs().catch(() => {}), { timeout: 6000 });
   // La app instalada desde la PC (localhost) sin el servidor abierto muestra la última copia guardada.
   if (['localhost', '127.0.0.1'].includes(location.hostname)) {
     fetch('sw.js', { cache: 'no-store' }).catch(() =>
@@ -1707,7 +1710,8 @@ async function chooseTheme(id, { preview = false } = {}) {
   lib.dollyIn();
   applyAmbient();
   updateThemeButton();
-  await wait(1100);
+  await Promise.all([wait(700), Promise.race([lib.ready, wait(4000)])]);
+  await wait(250); // un par de cuadros para que el fondo ya esté dibujado
   curtain.classList.remove('show');
   await wait(900);
   switchingTheme = false;

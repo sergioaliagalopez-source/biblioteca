@@ -209,6 +209,19 @@ function beamCanvas() {
   return c;
 }
 
+// Charco de luz cálida en el piso (lo que dejaría un foco), sumado a lo que hay debajo.
+function poolCanvas() {
+  const c = makeCanvas(128, 128);
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(64, 64, 4, 64, 64, 63);
+  r.addColorStop(0, 'rgba(255, 214, 160, 0.55)');
+  r.addColorStop(0.6, 'rgba(255, 200, 140, 0.18)');
+  r.addColorStop(1, 'rgba(255, 200, 140, 0)');
+  g.fillStyle = r;
+  g.fillRect(0, 0, 128, 128);
+  return c;
+}
+
 // Sombra de contacto suave bajo cada auto.
 function shadowCanvas() {
   const c = makeCanvas(128, 128);
@@ -654,16 +667,19 @@ function plinth(mats, w, d) {
 }
 
 // Foco del techo con su cono de luz suave (sin sombras, salvo el del centro).
-function spot(group, mats, from, to, color, intensity, angle, castShadow = false) {
-  const light = new THREE.SpotLight(color, intensity, 22, angle, 0.55, 1.2);
-  light.position.copy(from);
-  light.target.position.copy(to);
-  if (castShadow) {
+// Cada luz real cuesta en todos los píxeles: sólo el foco del centro es una luz de verdad; los demás son
+// el artefacto y su haz, y una sola luz móvil hace de foco durante la presentación.
+function spot(group, mats, from, to, color, intensity, angle, real = false) {
+  let light = null;
+  if (real) {
+    light = new THREE.SpotLight(color, intensity, 22, angle, 0.55, 1.2);
+    light.position.copy(from);
+    light.target.position.copy(to);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     light.shadow.bias = -0.0005;
+    group.add(light, light.target);
   }
-  group.add(light, light.target);
   const dir = to.clone().sub(from);
   const len = dir.length();
   const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.tan(angle) * len * 0.8, len, 32, 1, true), mats.beam.clone());
@@ -674,7 +690,7 @@ function spot(group, mats, from, to, color, intensity, angle, castShadow = false
   can.position.copy(from);
   can.quaternion.copy(cone.quaternion);
   group.add(can);
-  return { light, cone, base: intensity };
+  return { light, cone, base: intensity, from: from.clone(), to: to.clone() };
 }
 
 // ---------- Todo junto ----------
@@ -753,6 +769,7 @@ export function buildMuseum(lib, { modernCar }) {
   const banners = [['1950', '#5a0f18'], ['1960', '#173d29'], ['1970', '#141414'], ['1980', '#3a0c14']].map(([d, col], i) => {
     const m = new THREE.Mesh(bannerGeo, std({ map: tex(bannerCanvas(d, col)), side: THREE.DoubleSide, roughness: 0.85 }));
     m.position.set([-7.6, -4.6, 4.6, 7.6][i], HALL_H - 0.4, -11.5);
+    m.userData.dynamic = true;
     root.add(m);
     return m;
   });
@@ -761,6 +778,7 @@ export function buildMuseum(lib, { modernCar }) {
   const turntable = platform(mats, 2.7);
   turntable.position.copy(CENTER);
   const spinner = new THREE.Group();
+  spinner.userData.dynamic = true;
   spinner.position.y = 0.24;
   const hero = car1950(0xb3121e, 2);
   hero.scale.setScalar(1.05);
@@ -783,7 +801,12 @@ export function buildMuseum(lib, { modernCar }) {
     { car: car1960(0x174a2c, 7), x: -3.8, z: -15, rot: -0.75, year: 1965, line: 'el motor pasa atrás' },
     { car: modernCar(), x: 3.8, z: -15, rot: -2.39, year: 2008, line: 'aerodinámica moderna' },
   ];
+  const poolMat = new THREE.MeshBasicMaterial({ map: tex(poolCanvas()), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   for (const p of placed) {
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(8, 4.6), poolMat);
+    pool.rotation.set(-Math.PI / 2, 0, p.rot);
+    pool.position.set(p.x, 0.012, p.z);
+    root.add(pool);
     const ped = plinth(mats, 6.2, 2.6);
     ped.position.set(p.x, 0, p.z);
     ped.rotation.y = p.rot;
@@ -818,12 +841,18 @@ export function buildMuseum(lib, { modernCar }) {
     spot(root, mats, new THREE.Vector3(0, HALL_H - 0.4, CENTER.z + 2.5), new THREE.Vector3(0, 0.6, CENTER.z), 0xffe2bc, 120, 0.42, true),
     ...placed.map((p) => spot(root, mats, new THREE.Vector3(p.x * 0.8, HALL_H - 0.4, p.z + 2.6), new THREE.Vector3(p.x, 0.5, p.z), 0xffd9aa, 90, 0.4)),
   ];
-  const fill = new THREE.HemisphereLight(0xffe6c8, 0x2a1d16, 0.6);
-  const amb = new THREE.AmbientLight(0xffd8b0, 0.08);
-  root.add(fill, amb);
+  const fill = new THREE.HemisphereLight(0xffe6c8, 0x2a1d16, 0.75);
+  // luz cálida desde el techo que reemplaza a los focos de cada auto
+  const gallery = new THREE.DirectionalLight(0xffd9aa, 1.5);
+  gallery.position.set(2, HALL_H + 4, -2);
+  gallery.target.position.set(0, 0, -11);
+  // foco móvil de la presentación
+  const sweep = new THREE.SpotLight(0xfff0d8, 0, 24, 0.38, 0.5, 1.1);
+  root.add(fill, gallery, gallery.target, sweep, sweep.target);
 
   // el guía del museo, de traje oscuro, recorre la sala alrededor de la plataforma
   const guide = buildKeeper(0xc49a7c, 0x2a1d14, { shirt: 0x1b1f2a, trim: 0xf2efe6, pants: 0x1b1f2a, shoe: 0x141414, cap: false });
+  guide.root.userData.dynamic = true;
   root.add(guide.root);
   const walk = { s: 0, pause: 0, nextStop: 9 };
 
@@ -866,13 +895,20 @@ export function buildMuseum(lib, { modernCar }) {
         focus = k > 1.5 && k < 14.5 ? Math.floor((k - 1.5) / 2.6) % spots.length : -1;
         if (k > 16) state.show = null;
       }
+      const ease = Math.min(1, dt * 4);
       spots.forEach((s, i) => {
         const on = i === focus;
-        const target = s.base * (on ? 2.2 : house);
-        s.light.intensity += (target - s.light.intensity) * Math.min(1, dt * 4);
-        s.cone.material.opacity += ((on ? 0.11 : 0.04 * house) - s.cone.material.opacity) * Math.min(1, dt * 4);
+        if (s.light) s.light.intensity += (s.base * (on ? 2.2 : house) - s.light.intensity) * ease;
+        s.cone.material.opacity += ((on ? 0.11 : 0.04 * house) - s.cone.material.opacity) * ease;
       });
-      fill.intensity = 0.6 * house;
+      if (focus > 0) {
+        const f = spots[focus];
+        sweep.position.lerp(f.from, sweep.intensity < 1 ? 1 : ease);
+        sweep.target.position.lerp(f.to, sweep.intensity < 1 ? 1 : ease);
+      }
+      sweep.intensity += ((focus > 0 ? 260 : 0) - sweep.intensity) * ease;
+      gallery.intensity = 1.5 * house;
+      fill.intensity = 0.75 * house;
       mats.glow.emissiveIntensity = 2.2 * (0.35 + 0.65 * house);
       title.material.emissiveIntensity = 0.9 * (0.5 + 0.5 * house) + (state.show ? 0.4 * Math.sin(k * 2) ** 2 : 0);
     },

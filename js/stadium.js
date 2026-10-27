@@ -468,6 +468,7 @@ function buildFlags(court, spots) {
     geo.translate(1.2, 3.2, 0);
     const flag = new THREE.Mesh(geo, mats[i % 2]);
     g.add(pole, flag);
+    g.userData.dynamic = true;
     court.add(g);
     return { geo, x: Float32Array.from({ length: geo.attributes.position.count }, (_, k) => geo.attributes.position.getX(k)), phase: i * 1.7 };
   });
@@ -744,6 +745,7 @@ function buildKeepers(court) {
     { cz: -9.1, speed: 0.9, start: 17 },
   ].map(({ cz, speed, start }, i) => {
     const k = buildKeeper(...looks[i]);
+    k.root.userData.dynamic = true;
     court.add(k.root);
     const mat = new THREE.Group();
     const net = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.3), matMat);
@@ -753,6 +755,7 @@ function buildKeepers(court) {
     bar.position.set(0, 0.05, 0.65);
     bar.castShadow = true;
     mat.add(net, bar);
+    mat.userData.dynamic = true;
     court.add(mat);
     const ropeGeo = new THREE.BufferGeometry();
     ropeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(18), 3));
@@ -828,6 +831,7 @@ function buildSpidercam(court) {
   const led = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), std({ color: 0xff3020, emissive: 0xff2010, emissiveIntensity: 3 }));
   led.position.set(0.3, 0.15, 0.3);
   cam.add(body, lens, led);
+  cam.userData.dynamic = true;
   court.add(cam);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(24), 3));
@@ -850,6 +854,7 @@ function buildBirds(court) {
     const l = new THREE.Mesh(wing, mat), r = new THREE.Mesh(wing, mat);
     r.scale.x = -1;
     g.add(body, l, r);
+    g.userData.dynamic = true;
     court.add(g);
     return { g, l, r, off: i * 0.42, rad: 22 + (i % 3) * 2, h: 14.5 + (i % 4) * 0.7 };
   });
