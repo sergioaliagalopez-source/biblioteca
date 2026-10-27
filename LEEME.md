@@ -28,6 +28,11 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   La tela de las tapas, las guardas marmoladas y la cinta toman los colores de esa portada.
 - **Categorías**: pestañas arriba. `+` para crear una; clic derecho sobre una pestaña para renombrarla o borrarla.
   Clic derecho sobre un libro para moverlo, editarlo o quitarlo.
+- **PDF con dos páginas por hoja**: si el PDF trae el libro abierto (cada hoja apaisada con dos páginas lado a
+  lado), la app lo detecta sola y lo separa en páginas normales, con su texto, resaltados y lectura en voz alta
+  página por página. Los libros que ya estaban en la biblioteca se revisan la próxima vez que se abren (la cinta,
+  la última página y los resaltados pasan a la nueva numeración). Se puede cambiar a mano en **Detalles › Hojas
+  del PDF**.
 - **Leer**: clic en un libro. Sale de la estantería, se abre la tapa y pasas hojas con clic, flechas, rueda o deslizando.
 - **La cinta**: botón **Cinta** (o tecla `B`) y la cinta cae sobre la página. La próxima vez el libro se abre ahí.
   Si estás en otra página, la punta de la cinta asoma por abajo del lomo: clic en ella para volver.

@@ -1,6 +1,6 @@
 // Lector: un libro de tapa dura en CSS 3D, con hojas que pasan, guardas marmoladas
 // y una cinta de seda que marca dónde dejaste de leer.
-import { openPdf, renderPage, pdfUtil } from './pdfdoc.js';
+import { openPdf, renderPage, pdfUtil, detectTwoUp, splitDoc, remapBook } from './pdfdoc.js';
 import { prefs } from './db.js';
 import { sound } from './sound.js';
 import { voiceFor, speechRate } from './voices.js';
@@ -409,7 +409,16 @@ export class Reader {
   async open(book, blob, coverUrl) {
     this.book = book;
     this.coverUrl = coverUrl;
-    this.pdf = await openPdf(blob);
+    const raw = await openPdf(blob);
+    // Libros que todavía no se revisaron: ¿cada hoja trae dos páginas? Si es así, se dividen y se pasan
+    // la página, la cinta y los resaltados guardados a la nueva numeración.
+    if (book.split === undefined) {
+      const s = await detectTwoUp(raw).catch(() => false);
+      remapBook(book, false, s);
+      book.split = s;
+      this.onSave?.(book);
+    }
+    this.pdf = book.split ? splitDoc(raw, book.split) : raw;
     this.N = this.pdf.numPages;
     this.aspect = book.pageAspect || book.aspect || 0.66;
     this.zoomIdx = 0;
@@ -673,7 +682,7 @@ export class Reader {
           try {
             let dest = it.dest;
             if (typeof dest === 'string') dest = await pdf.getDestination(dest);
-            if (Array.isArray(dest) && dest[0] != null) page = typeof dest[0] === 'number' ? dest[0] + 1 : (await pdf.getPageIndex(dest[0])) + 1;
+            if (Array.isArray(dest) && dest[0] != null) page = typeof dest[0] === 'number' ? (pdf.toVirtual ? pdf.toVirtual(dest[0]) : dest[0]) + 1 : (await pdf.getPageIndex(dest[0])) + 1;
           } catch {
             /* destino roto: el capítulo queda sin página */
           }
