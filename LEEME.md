@@ -74,6 +74,11 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   De pago, 1,99 US$ cada uno (o los dos juntos en un paquete, cuando esté creado):
   - **Paddock Club**: suite sobre la recta. Cada 45 segundos se encienden los semáforos y pasan los autos.
     Tiene cascos, autos a escala y un traje enmarcado.
+  - **Museo de campeones** (F1): la estantería en una galería de autos históricos (años 50, 60, 70, 80 y uno
+    moderno) en pedestales con cordón de terciopelo, vitrinas con cascos de época y copas doradas, estandartes de
+    cada década y fotos antiguas. El auto del centro gira, un guía recorre la sala y, cada 50 segundos, se apagan
+    las luces y un foco presenta los autos uno por uno, con una campanilla y un motor de época a lo lejos.
+    En la estantería: maquetas de autos de época, cascos clásicos en busto, copas, fotos y un volante de madera.
   - **Tennis**: palco alto de un estadio de París vacío, detrás de la línea de fondo, con la cancha de arcilla abajo, a lo largo.
     Dos cuidadores pasan la alfombra por la arcilla (cada uno en su mitad), se encienden los aspersores,
     la cámara aérea recorre la cancha colgada de sus cables, vuelan pájaros, ondean las banderas
@@ -140,7 +145,7 @@ Lemon Squeezy cobra con tarjeta o PayPal en todo el mundo, se ocupa de los impue
 banco o a PayPal. Comisión aproximada: 5 % + 0,50 US$ por venta.
 
 1. Crea una cuenta en lemonsqueezy.com y una tienda. Completa los datos de pago (Settings → Payouts).
-2. Crea un producto por fondo, «Paddock Club» y «Tennis», a 1,99 US$.
+2. Crea un producto por fondo, «Paddock Club», «Tennis» y «Museo de campeones», a 1,99 US$.
    En cada uno activa **Generate license keys**, con un límite de activaciones de 5.
 3. Copia en `js/store.js`, dentro de `PAYMENTS`:
    - `storeId`: el número de la tienda (Settings → Stores).

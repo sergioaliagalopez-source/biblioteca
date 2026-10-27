@@ -90,6 +90,7 @@ async function boot() {
       onThunder: () => sound.thunder(),
       onRace: (times) => sound.race(times),
       onSprinkler: (seconds) => sound.sprinkler(seconds),
+      onShow: (seconds) => sound.museumShow(seconds),
       onHover: showTooltip,
       onOpen: openBook,
       onContext: bookMenu,

@@ -551,6 +551,76 @@ const GENERATORS = {
     };
   },
 
+  // Sala del museo: aire acondicionado suave, murmullo lejano, pasos que resuenan en el mármol
+  // y, de fondo, acordes largos y muy bajos de cuerdas.
+  museo(out) {
+    const c = audio();
+    const air = noiseLoop(out, 'brown', [{ type: 'lowpass', freq: 260 }], 0.08);
+    const murmur = noiseLoop(out, 'pink', [{ type: 'bandpass', freq: 420, q: 0.8 }], 0.012);
+    const hall = room();
+    let alive = true;
+    const timers = [];
+    const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
+    // pasos: un golpe grave y un taconeo, con la reverberación de la sala
+    const steps = () => {
+      const n = 4 + Math.floor(Math.random() * 6);
+      const pan = c.createStereoPanner();
+      pan.pan.value = Math.random() * 1.4 - 0.7;
+      pan.connect(out);
+      pan.connect(hall);
+      let at = c.currentTime + 0.05;
+      for (let i = 0; i < n; i++) {
+        burst(pan, { at, dur: 0.07, type: 'pink', filter: 'lowpass', freq: 700, peak: 0.05 });
+        burst(pan, { at: at + 0.01, dur: 0.03, filter: 'bandpass', freq: 2600, q: 1.5, peak: 0.025 });
+        at += 0.55 + Math.random() * 0.08;
+      }
+      later(steps, (n * 0.6 + 6 + Math.random() * 12) * 1000);
+    };
+    // cuerdas: acordes largos que cambian despacio
+    const pad = c.createGain();
+    pad.gain.value = 0.0;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 900;
+    pad.connect(lp).connect(out);
+    lp.connect(hall);
+    const chords = [[50, 57, 62, 66], [48, 55, 60, 64], [45, 52, 57, 60], [43, 50, 55, 59]];
+    let ci = 0;
+    const chord = () => {
+      const t = c.currentTime;
+      for (const n of chords[ci++ % chords.length]) {
+        for (const det of [-4, 4]) {
+          const o = c.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = midi(n);
+          o.detune.value = det;
+          const g = c.createGain();
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.linearRampToValueAtTime(0.006, t + 3);
+          g.gain.setValueAtTime(0.006, t + 9);
+          g.gain.linearRampToValueAtTime(0.0001, t + 13);
+          o.connect(g).connect(pad);
+          o.start(t);
+          o.stop(t + 13.2);
+        }
+      }
+      later(chord, 11000);
+    };
+    pad.gain.setValueAtTime(0.0001, c.currentTime);
+    pad.gain.linearRampToValueAtTime(1, c.currentTime + 4);
+    later(steps, 3000);
+    chord();
+    return (t) => {
+      alive = false;
+      timers.forEach(clearTimeout);
+      air.stop(t);
+      murmur.stop(t);
+      pad.gain.cancelScheduledValues(t);
+      pad.gain.setValueAtTime(pad.gain.value, t);
+      pad.gain.linearRampToValueAtTime(0.0001, t + 1);
+    };
+  },
+
   // Lluvia en el ventanal, acordes ambientales largos y notas sueltas de piano.
   city(out) {
     const c = audio();
@@ -757,6 +827,56 @@ export const sound = {
       crowd.gain.setValueAtTime(0.7, t0);
       crowd.gain.linearRampToValueAtTime(1.8, t0 + 1);
       crowd.gain.linearRampToValueAtTime(0.7, t0 + 6);
+    }
+  },
+
+  // Presentación del museo: campanilla y, a lo lejos, un motor de época que arranca y acelera.
+  museumShow(seconds) {
+    if (current.mode !== 'museo' || !ctx) return;
+    const c = audio();
+    const now = c.currentTime + 0.1;
+    const hall = room();
+    for (const [i, n] of [76, 81, 88].entries()) {
+      const o = c.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = midi(n);
+      const g = c.createGain();
+      const at = now + i * 0.18;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.05, at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 2.2);
+      o.connect(g).connect(ambBus);
+      g.connect(hall);
+      o.start(at);
+      o.stop(at + 2.3);
+    }
+    // motor: arranque, ralentí grave y dos aceleradas, apagado y lejano
+    const start = now + 1.5, end = start + Math.min(seconds - 3, 9);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;
+    const eg = c.createGain();
+    eg.gain.setValueAtTime(0.0001, start);
+    eg.gain.exponentialRampToValueAtTime(0.09, start + 0.4);
+    eg.gain.setValueAtTime(0.09, end - 1.5);
+    eg.gain.exponentialRampToValueAtTime(0.0001, end);
+    eg.connect(lp).connect(ambBus);
+    lp.connect(hall);
+    for (const [type, mult, level] of [['sawtooth', 1, 0.6], ['square', 0.5, 0.35]]) {
+      const o = c.createOscillator();
+      o.type = type;
+      const f = (k) => 42 * mult * k;
+      o.frequency.setValueAtTime(f(1), start);
+      o.frequency.linearRampToValueAtTime(f(1.05), start + 1.5);
+      o.frequency.exponentialRampToValueAtTime(f(2.6), start + 2.3);
+      o.frequency.exponentialRampToValueAtTime(f(1.1), start + 3.4);
+      o.frequency.exponentialRampToValueAtTime(f(3.1), start + 4.4);
+      o.frequency.exponentialRampToValueAtTime(f(1), start + 5.8);
+      const og = c.createGain();
+      og.gain.value = level;
+      o.connect(og).connect(eg);
+      o.start(start);
+      o.stop(end + 0.05);
     }
   },
 

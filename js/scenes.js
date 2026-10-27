@@ -8,6 +8,7 @@ import {
 } from './textures.js';
 import { seaBackdrop, cityBackdrop, paddockBackdrop } from './backdrops.js';
 import { buildStadium } from './stadium.js';
+import { buildMuseum, classicHelmet } from './museum.js';
 import { buildSilverCup } from './tennis.js';
 
 // Estantería principal (metros). Las filas indican la altura de cada balda.
@@ -801,6 +802,80 @@ SCENES.tierra = {
   },
   tick(lib, t, dt) {
     lib.fx.stadium.update(t, dt, lib.handlers.onSprinkler);
+  },
+};
+
+// Museo de campeones (F1): estantería de nogal lacado con bronce en una galería de autos históricos.
+// El auto del centro gira, un guía recorre la sala y cada tanto se presentan los autos con un foco (ver museum.js).
+SCENES.museo = {
+  background: 0x0e0b09,
+  fog: [0x0e0b09, 24, 60],
+  far: 70,
+  exposure: 1.12,
+  palette: ['#5a0f18', '#1d1a18', '#c9a25a', '#173d29', '#e9dfcc', '#7a0a18', '#2b2b2e', '#8a6a3a'],
+  paletteGain: 0.8,
+  plaque: 'brass',
+  decor: {
+    first: 'vintagemodel',
+    kinds: ['classichelmet', 'classichelmet', 'vintagemodel', 'vintagemodel', 'trophy', 'trophy', 'oldphoto', 'oldphoto', 'woodwheel', 'old', 'stack'],
+    caps: { classichelmet: 3, vintagemodel: 3, trophy: 2, oldphoto: 2, woodwheel: 1, stack: 2 },
+  },
+  particles: { count: 220, size: 0.013, color: 0xffe2b8, opacity: 0.4, rise: 0.4 },
+  materials: (env) => ({
+    wood: std({ map: tex(woodCanvas({ seed: 73, base: '#2a160d', dark: '#140904', light: '#43230f' })), roughness: 0.22, envMap: env, envMapIntensity: 0.55 }),
+    woodDark: std({ color: 0x1a0f0a, roughness: 0.3, envMap: env, envMapIntensity: 0.5 }),
+    panel: std({ map: tex(woodCanvas({ seed: 75, base: '#3a1d10', dark: '#1d0d06', light: '#5a2e16', lines: 120 })), roughness: 0.24, envMap: env, envMapIntensity: 0.55 }),
+    brass: std({ color: 0xd2a95c, metalness: 1, roughness: 0.24, envMap: env, envMapIntensity: 1.3 }),
+    gold: std({ color: 0xe6bd5c, metalness: 1, roughness: 0.18, envMap: env, envMapIntensity: 1.5 }),
+    rubber: std({ color: 0x111111, roughness: 0.85 }),
+    acrylic: new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, roughness: 0.02, metalness: 0, envMap: env, envMapIntensity: 1 }),
+    glow: std({ color: 0xfff1d8, emissive: 0xffd9a0, emissiveIntensity: 2.0 }),
+    porcelain: std({ color: 0x5a0f18, roughness: 0.2, envMap: env, envMapIntensity: 0.8 }),
+  }),
+  build(lib) {
+    const fx = lib.fx;
+    fx.museum = buildMuseum(lib, { modernCar: () => buildF1Car(LIVERIES[0]) });
+    mainCase(lib, { back: false });
+    // filete dorado en el frente de cada repisa
+    for (const y of BC.rows) {
+      const strip = new THREE.Mesh(lib.unitBox, lib.mat.brass);
+      strip.scale.set(BC.w - 2 * BC.side, 0.008, 0.006);
+      strip.position.set(0, y - 0.006, BC.z + BC.d / 2 - 0.012);
+      lib.room.add(strip);
+    }
+    // a los costados: una copa dorada grande en su columna y un casco de época en su vitrina
+    const column = (x) => {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.95, 32), lib.mat.panel);
+      c.position.set(x, 0.475, FRONT_Z + 0.4);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.05, 32), lib.mat.brass);
+      cap.position.set(x, 0.975, FRONT_Z + 0.4);
+      lib.room.add(c, cap);
+    };
+    column(-3.1);
+    column(3.1);
+    const pts = [[0, 0], [0.15, 0], [0.15, 0.04], [0.06, 0.1], [0.045, 0.32], [0.14, 0.4], [0.22, 0.56], [0.24, 0.72], [0.22, 0.74], [0, 0.54]].map(([a, b]) => new THREE.Vector2(a, b));
+    const cup = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), lib.mat.gold);
+    cup.position.set(-3.1, 1.0, FRONT_Z + 0.4);
+    cup.castShadow = true;
+    for (const s of [-1, 1]) {
+      const h = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.014, 10, 28, Math.PI * 1.2), lib.mat.gold);
+      h.position.set(-3.1 + s * 0.24, 1.6, FRONT_Z + 0.4);
+      h.rotation.z = s > 0 ? -1.1 : Math.PI + 1.1 - Math.PI * 0.2;
+      lib.room.add(h);
+    }
+    const helmet = classicHelmet(0xb3121e, lib.mat);
+    helmet.scale.setScalar(2.0);
+    helmet.position.set(3.1, 1.0, FRONT_Z + 0.4);
+    helmet.rotation.y = -0.4;
+    const vitrine = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.8, 0.62), lib.mat.acrylic);
+    vitrine.position.set(3.1, 1.4, FRONT_Z + 0.4);
+    lib.room.add(cup, helmet, vitrine);
+    lib.room.add(new THREE.HemisphereLight(0xffe6c8, 0x1a1210, 0.3));
+    keyLight(lib, 0xffe0b8, 26);
+    baySpots(lib, 0xffd8a8, 4);
+  },
+  tick(lib, t, dt) {
+    lib.fx.museum.update(t, dt, lib.handlers.onShow);
   },
 };
 

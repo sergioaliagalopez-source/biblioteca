@@ -55,6 +55,15 @@ export const THEMES = [
     preview: 'themes/paddock.jpg',
   },
   {
+    id: 'museo',
+    collection: 'f1',
+    name: 'Museo de campeones',
+    mood: 'Autos históricos, cascos de época y trofeos dorados',
+    sound: 'museo',
+    price: 1.99,
+    preview: 'themes/museo.jpg',
+  },
+  {
     id: 'tierra',
     collection: 'deportes',
     name: 'Tennis',
@@ -74,6 +83,7 @@ export const AMBIENTS = {
   city: 'Lluvia y piano',
   paddock: 'Motores y tribuna',
   paris: 'Tarde en París',
+  museo: 'Sala del museo',
   rain: 'Lluvia',
   off: 'Silencio',
 };

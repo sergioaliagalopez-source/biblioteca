@@ -560,10 +560,12 @@ function buildCourt(court) {
 
 // Personaje con aire de videojuego animado (hombros anchos, manos y zapatillas grandes), con polo verde,
 // pantalón beige y gorra blanca.
-function buildKeeper(skinHex, hairHex) {
+// `outfit` cambia la ropa (el guía del museo va de traje oscuro y sin gorra).
+export function buildKeeper(skinHex, hairHex, outfit = {}) {
+  const o = { shirt: 0x1d5a3b, trim: 0xf2efe6, pants: 0xd6cbb0, shoe: 0xf6f5f0, cap: true, ...outfit };
   const M = (color, roughness = 0.75) => std({ color, roughness });
-  const skin = M(skinHex, 0.55), polo = M(0x1d5a3b, 0.8), trim = M(0xf2efe6, 0.7), pants = M(0xd6cbb0, 0.85);
-  const shoe = M(0xf6f5f0, 0.45), sole = M(0x2e2e2e, 0.8), capM = M(0xf4f1e8, 0.6), brimM = M(0x1d5a3b, 0.6), hairM = M(hairHex, 0.9);
+  const skin = M(skinHex, 0.55), polo = M(o.shirt, 0.8), trim = M(o.trim, 0.7), pants = M(o.pants, 0.85);
+  const shoe = M(o.shoe, 0.45), sole = M(0x2e2e2e, 0.8), capM = M(0xf4f1e8, 0.6), brimM = M(o.shirt, 0.6), hairM = M(hairHex, 0.9);
   const dark = M(0x1a1410, 0.4);
   const cap = (r, len, m) => {
     const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 4, 12), m);
@@ -637,7 +639,14 @@ function buildKeeper(skinHex, hairHex) {
   brim.position.set(0, 0.035, 0.085);
   brim.scale.set(1.0, 1, 1.25);
   brim.rotation.x = 0.22;
-  head.add(skull, jaw, hair, nose, capTop, brim);
+  if (o.cap) head.add(skull, jaw, hair, nose, capTop, brim);
+  else {
+    // sin gorra: pelo corto peinado arriba
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.136, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), hairM);
+    top.position.set(0, 0.02, -0.01);
+    top.scale.set(0.97, 0.9, 1.03);
+    head.add(skull, jaw, hair, nose, top);
+  }
   // brazos: hombro → codo → mano (manos algo grandes)
   const arm = (s) => {
     const shoulder = new THREE.Group();

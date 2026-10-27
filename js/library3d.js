@@ -10,6 +10,7 @@ import { checkerCanvas, wheelScreenCanvas } from './textures.js';
 import {
   RACKET_LOOKS, buildRacket, buildSilverCup, buildTrophyCase, buildJumboBall, buildRacketFrame, buildBallCans, buildClayJar, buildPoster,
 } from './tennis.js';
+import { classicHelmet, HELMET_COLORS, VINTAGE, buildOldPhoto } from './museum.js';
 
 const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
@@ -724,6 +725,70 @@ export class Library3D {
     if (kind === 'poster' && maxW > 0.36) {
       const style = (this.decorUsed.posterStyle = ((this.decorUsed.posterStyle ?? Math.floor(rnd() * 3)) + 1) % 3);
       g.add(buildPoster(this.mat, style, year(), this.dynamic));
+      g.userData.w = 0.36;
+      return g;
+    }
+    // ---- Museo de campeones ----
+    if (kind === 'classichelmet' && maxW > 0.24) {
+      const c = HELMET_COLORS[(this.decorUsed.hcol = ((this.decorUsed.hcol ?? Math.floor(rnd() * 6)) + 1) % HELMET_COLORS.length)];
+      const h = classicHelmet(c, this.mat, this.dynamic);
+      h.scale.setScalar(1.25);
+      h.rotation.y = (rnd() - 0.5) * 0.9;
+      g.add(h);
+      g.userData.w = 0.24;
+      return g;
+    }
+    if (kind === 'vintagemodel' && maxW > 0.42) {
+      // maqueta de un auto de época sobre base de nogal, en caja de acrílico
+      const i = (this.decorUsed.vint = ((this.decorUsed.vint ?? -1) + 1) % VINTAGE.length);
+      const car = VINTAGE[i]();
+      car.scale.setScalar(0.085);
+      car.position.y = 0.035;
+      car.rotation.y = 0.5 + (rnd() - 0.5) * 0.3;
+      car.traverse((m) => {
+        if (!m.isMesh) return;
+        this.dynamic.push(m.geometry, m.material);
+        if (m.material.map) this.dynamic.push(m.material.map);
+      });
+      const base = new THREE.Mesh(this.unitBox, this.mat.woodDark);
+      base.scale.set(0.42, 0.035, 0.22);
+      base.position.y = 0.0175;
+      const caseBox = new THREE.Mesh(this.unitBox, this.mat.acrylic);
+      caseBox.scale.set(0.42, 0.14, 0.22);
+      caseBox.position.y = 0.035 + 0.07;
+      g.add(base, car, caseBox);
+      g.userData.w = 0.44;
+      return g;
+    }
+    if (kind === 'woodwheel' && maxW > 0.3) {
+      // volante de madera de época con rayos de bronce, en su atril
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.013, 12, 40), this.mat.panel);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.02, 16), this.mat.brass);
+      hub.rotation.x = Math.PI / 2;
+      const wheel = new THREE.Group();
+      wheel.add(rim, hub);
+      const spokeGeo = new THREE.BoxGeometry(0.1, 0.012, 0.006);
+      for (const a of [Math.PI / 2, Math.PI / 2 + 2.1, Math.PI / 2 - 2.1]) {
+        const sp = new THREE.Mesh(spokeGeo, this.mat.brass);
+        sp.position.set(Math.cos(a) * 0.055, Math.sin(a) * 0.055, 0);
+        sp.rotation.z = a;
+        wheel.add(sp);
+      }
+      wheel.position.y = 0.17;
+      wheel.rotation.x = -0.3;
+      const stand = new THREE.Mesh(this.unitBox, this.mat.brass);
+      stand.scale.set(0.012, 0.12, 0.012);
+      stand.position.set(0, 0.06, -0.03);
+      const foot = new THREE.Mesh(this.unitBox, this.mat.woodDark);
+      foot.scale.set(0.14, 0.015, 0.09);
+      foot.position.y = 0.0075;
+      g.add(foot, stand, wheel);
+      this.dynamic.push(rim.geometry, hub.geometry, spokeGeo);
+      g.userData.w = 0.3;
+      return g;
+    }
+    if (kind === 'oldphoto' && maxW > 0.36) {
+      g.add(buildOldPhoto(this.mat, Math.floor(rnd() * 100), this.dynamic));
       g.userData.w = 0.36;
       return g;
     }
