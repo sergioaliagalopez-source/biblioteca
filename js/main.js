@@ -119,6 +119,12 @@ async function boot() {
     if (!isUnlocked(themeById(state.theme))) chooseTheme('clasica');
   });
   registerServiceWorker();
+  // La app instalada desde la PC (localhost) sin el servidor abierto muestra la última copia guardada.
+  if (['localhost', '127.0.0.1'].includes(location.hostname)) {
+    fetch('sw.js', { cache: 'no-store' }).catch(() =>
+      setTimeout(() => toast('Estás viendo la copia guardada: el servidor de la PC está cerrado. Abre «Abrir Biblioteca.bat» para ver la última versión, o instala la app desde su dirección publicada.', 10000), 1500)
+    );
+  }
   if (!db.persistent && !db.folder) {
     const warn = () => toast('Este navegador no deja guardar datos aquí: tus libros sólo durarán hasta cerrar la pestaña. Abre la app con «Abrir Biblioteca.bat».', 9000);
     setTimeout(warn, 1500);
