@@ -13,7 +13,7 @@ export const PAYMENTS = {
   products: {
     paddock: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/31df33b6-f676-439c-93ec-30c92124f8e0', productId: 1472475 },
     tierra: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/5104ab33-a7f4-47f6-ade3-1d33459e4843', productId: 1472501 },
-    museo: { checkout: '', productId: null }, // falta crear el producto «Museo de campeones» en Lemon Squeezy
+    museo: { checkout: 'https://biblioteca3d.lemonsqueezy.com/checkout/buy/e90af7da-89dc-469e-a797-d81d756bd305', productId: 1477751 },
   },
   // Paquetes: un solo código desbloquea varios fondos. Se muestran cuando tienen enlace y número de producto.
   bundles: [
