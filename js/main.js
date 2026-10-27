@@ -45,6 +45,10 @@ let reader;
 
 // ---------- Arranque ----------
 
+// Safari no respeta «sin zoom» de la página: se bloquea el pellizco (sus gestos propios y los toques con dos dedos).
+for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', (e) => e.touches.length > 1 && e.preventDefault(), { passive: false });
+
 // Safari dibuja el libro 3D del lector por encima de las ventanas: ahí se oculta mientras hay una abierta.
 const ua = navigator.userAgent;
 if (/AppleWebKit/.test(ua) && !/Chrome|Chromium|CriOS|Edg/.test(ua)) document.documentElement.classList.add('webkit');

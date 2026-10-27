@@ -38,6 +38,9 @@ button:disabled { cursor: default; opacity: 0.35; }
   transition: filter 0.9s ease, transform 0.9s ease;
 }
 html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+/* Sin zoom del navegador (doble toque ni pellizco): el único zoom es el del lector. touch-action no se hereda
+   dentro de las zonas con desplazamiento, por eso va en todos los elementos; el lienzo 3D conserva el suyo. */
+* { touch-action: manipulation; touch-action: pan-x pan-y; }
 body.reading #scene { filter: blur(9px) brightness(0.42) saturate(0.85); transform: scale(1.05); }
 
 .ornament { font-family: var(--serif); color: var(--gold); font-size: 30px; line-height: 1; }
@@ -889,7 +892,7 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 .focus-lock .lock { position: absolute; left: 14px; top: 14px; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .focus-lock .time { font-family: var(--serif); font-size: 17px; letter-spacing: 0.06em; min-width: 3.2em; }
 #reader.focus .reader-top .r-tools, #reader.focus #rBack { visibility: hidden; }
-#reader.focus #rZoomOut, #reader.focus #rZoomIn, #reader.focus #rMode, #reader.focus #rSound, #reader.focus #rScrub,
+#reader.focus #rMode, #reader.focus #rSound, #reader.focus #rScrub,
 #reader.focus .reader-bar .sep, #reader.focus #hlList { display: none; }
 .focus-times { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 4px 0 14px; }
 .focus-tip { margin: 0; text-align: center; font-size: 15px; font-style: italic; color: var(--ink-soft); }
@@ -977,3 +980,14 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 .vh ol, .vh ul { margin: 0; padding-left: 22px; }
 .vh li { margin: 5px 0; line-height: 1.45; }
 .vh-note { margin: 8px 0 0; font-size: 14px; font-style: italic; color: var(--ink-soft); }
+
+/* Zoom del lector: el nivel actual entre el menos y el más (toca para volver a ver la página entera) */
+.zoom-label { min-width: 74px; font-size: 15px; color: var(--cream-dim); }
+.zoom-label:disabled { opacity: 0.5; }
+/* En el teléfono, los campos de texto con letra de 16 px evitan que Safari acerque la pantalla al tocarlos */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}
+@media (max-width: 480px) {
+  .zoom-label { display: none; }
+}

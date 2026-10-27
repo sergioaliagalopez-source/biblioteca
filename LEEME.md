@@ -90,6 +90,14 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
 - **Restaurar compras**: en un teléfono nuevo, pega el código de compra que llegó por email. Si no lo encuentras,
   el enlace lleva a «Mis pedidos» de Lemon Squeezy. También está en **Fondos** → «Restaurar compras».
 
+## Zoom del lector
+
+El único zoom de la app es el del lector (botones **−** y **+**; la pantalla no se agranda con doble toque ni con
+pellizco). Los niveles se adaptan a cada pantalla: **Ajustar** (la página entera), **Ancho** (la página ocupa todo
+el ancho, si así se agranda) y pasos más grandes hasta 3×. En la computadora, el nombre del nivel aparece entre el
+− y el +; tocarlo vuelve a «Ajustar». Al acercar se mantiene centrado lo que estabas mirando, y al pasar de hoja se
+vuelve al principio de la página. En el modo enfoque también se puede usar.
+
 ## Atajos en el lector
 
 `→` / `←` pasar hoja · `B` cinta · `H` resaltar · `+` / `−` zoom · `Inicio` / `Fin` · `Esc` volver a la biblioteca

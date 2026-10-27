@@ -6,7 +6,8 @@ import { sound } from './sound.js';
 import { voiceFor, speechRate } from './voices.js';
 import { marbleDataURL, clothDataURL, paperDataURL, deskDataURL, shade, hashStr, clamp } from './textures.js';
 
-const ZOOMS = [1, 1.3, 1.65, 2.1];
+// Zoom del lector: después de «página entera» y «al ancho de la pantalla» (si cabe), pasos más grandes.
+const ZOOM_STEPS = [1.25, 1.6, 2];
 // Colores del resaltador (se mezclan con el papel en modo "multiplicar").
 export const HL_COLORS = {
   yellow: { name: 'Amarillo', fill: 'rgba(250, 214, 80, 0.62)', dot: '#f2cf55' },
@@ -76,13 +77,19 @@ export class Reader {
     // Deja aire arriba para el título y abajo para la cola de la cinta.
     let ph = (vh - 160) / (1 + 2 * bdK);
     let pw = ph * aspect;
-    const totalW = (double ? 2 : 1) * pw + 2 * ph * bdK + 24;
+    let totalW = (double ? 2 : 1) * pw + 2 * ph * bdK + 24;
     if (totalW > vw - 40) {
       const k = (vw - 40) / totalW;
       ph *= k;
       pw *= k;
+      totalW = vw - 40;
     }
-    const z = ZOOMS[this.zoomIdx];
+    // Niveles para esta pantalla: entera (1), al ancho (si agranda de verdad) y pasos desde ahí.
+    const fitW = (vw - 40) / totalW;
+    const width = fitW > 1.08 ? fitW : null;
+    this.zoomLevels = [1, ...(width ? [width] : []), ...ZOOM_STEPS.map((k) => k * (width || 1)).filter((z) => z <= 3.05)];
+    this.zoomWidth = width;
+    const z = this.zoomLevels[clamp(this.zoomIdx, 0, this.zoomLevels.length - 1)];
     ph = Math.round(ph * z);
     pw = Math.round(pw * z);
     const bd = Math.round(clamp(ph * bdK, 7, 30));
@@ -101,6 +108,7 @@ export class Reader {
 
   layout() {
     const { double, pw, ph, bd, T } = this.measure(this.aspect, this.N);
+    this.zoomIdx = clamp(this.zoomIdx, 0, this.zoomLevels.length - 1);
     this.double = double;
     this.bk.classList.toggle('single', !double);
     const halfW = double ? pw + bd : pw + 2 * bd;
@@ -163,7 +171,10 @@ export class Reader {
       return c;
     });
     this.cache.set(key, pr);
-    while (this.cache.size > 28) this.cache.delete(this.cache.keys().next().value);
+    // Con zoom cada página pesa mucho más: se guardan menos (unos 40 millones de píxeles en total).
+    const px = this.pw * this.ph * Math.min(window.devicePixelRatio || 1, 2) ** 2;
+    const keep = clamp(Math.floor(4e7 / px), 6, 28);
+    while (this.cache.size > keep) this.cache.delete(this.cache.keys().next().value);
     return pr;
   }
 
@@ -623,6 +634,7 @@ export class Reader {
 
   afterMove() {
     this.lastActivity = Date.now();
+    if (this.zoomIdx > 0) this.stage.scrollTop = 0;
     if (this.focus) this.realPages(this.s).forEach((p) => this.focus.pages.add(p));
     // Si se pasó de hoja a mano mientras leía en voz alta, sigue leyendo desde la nueva página.
     if (this.speaking && !this.speechTurning) this.speakSpread();
@@ -896,8 +908,13 @@ export class Reader {
     scrub.style.setProperty('--p', `${((first - 1) / Math.max(1, this.N - 1)) * 100}%`);
     $('#rPrev').disabled = this.s <= this.minS;
     $('#rNext').disabled = this.s >= this.maxS;
+    const levels = this.zoomLevels || [1];
+    const z = levels[this.zoomIdx] || 1;
     $('#rZoomOut').disabled = this.zoomIdx === 0;
-    $('#rZoomIn').disabled = this.zoomIdx === ZOOMS.length - 1;
+    $('#rZoomIn').disabled = this.zoomIdx === levels.length - 1;
+    const label = $('#rZoomLabel');
+    label.textContent = this.zoomIdx === 0 ? 'Ajustar' : z === this.zoomWidth ? 'Ancho' : `${Math.round(z * 100)} %`;
+    label.disabled = this.zoomIdx === 0;
     $('#rMode').textContent = this.double ? 'Doble página' : 'Una página';
     this.bk.classList.toggle('zoomed', this.zoomIdx > 0);
   }
@@ -917,10 +934,22 @@ export class Reader {
     this.prefetch();
   }
 
+  // Cambia el zoom sin perder el lugar: desde «entera» va al principio de la página, centrado;
+  // entre otros niveles mantiene en el centro lo que estabas mirando.
   setZoom(i) {
     if (this.busy) return;
-    this.zoomIdx = clamp(i, 0, ZOOMS.length - 1);
-    this.relayout();
+    const next = clamp(i, 0, (this.zoomLevels || [1]).length - 1);
+    if (next === this.zoomIdx) return;
+    const st = this.stage;
+    const from = this.zoomIdx;
+    const rx = (st.scrollLeft + st.clientWidth / 2) / st.scrollWidth;
+    const ry = (st.scrollTop + st.clientHeight / 2) / st.scrollHeight;
+    this.zoomIdx = next;
+    this.relayout(); // las medidas nuevas se aplican enseguida; las páginas se redibujan después
+    if (next === 0) return st.scrollTo(0, 0);
+    st.scrollLeft = rx * st.scrollWidth - st.clientWidth / 2;
+    st.scrollTop = from === 0 ? 0 : ry * st.scrollHeight - st.clientHeight / 2;
+    this.showUI();
   }
 
   cycleMode() {
@@ -1128,6 +1157,7 @@ export class Reader {
     });
     $('#rZoomIn').addEventListener('click', () => this.setZoom(this.zoomIdx + 1));
     $('#rZoomOut').addEventListener('click', () => this.setZoom(this.zoomIdx - 1));
+    $('#rZoomLabel').addEventListener('click', () => this.setZoom(0));
     $('#rMode').addEventListener('click', () => this.cycleMode());
     $('#rSound').addEventListener('click', () => this.onAmbient?.());
     $('#rPageInput').addEventListener('change', (e) => {
