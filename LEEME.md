@@ -42,13 +42,16 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
 - **Papel**: botón de arriba en el lector que cambia entre **Día**, **Sepia** (más cálido) y **Noche** (letras claras
   sobre fondo oscuro, para leer a oscuras).
 - **Progreso**: al pasar el ratón (o mantener apretado) un libro se ve la página y el porcentaje leído.
-- **Modo enfoque**: botón del candado arriba en el lector. Eliges 15, 30 o 45 minutos (o sin límite) y quedan sólo
+- **Modo enfoque**: botón del candado arriba en el lector. Eliges 5, 10, 15, 30 o 60 minutos, o **+** para poner tu
+  propio tiempo (de 1 a 600 minutos, con − y + de a 5), y quedan sólo
   pasar hojas, la cinta, resaltar y escuchar; no se puede volver a la biblioteca. Para salir, **mantén apretado el
   candado dos segundos**. Al terminar aparece un resumen con los minutos y las páginas leídas.
   (La app no puede silenciar el teléfono: para eso activa también el modo Concentración del iPhone.)
 - **Escuchar**: botón de los auriculares. El teléfono o la computadora lee las páginas en voz alta y pasa las hojas
   solo. Vuelve a tocarlo para parar.
   En **Sonido › Voz de lectura** eliges la voz (una para español y otra para inglés) y la velocidad, y la pruebas.
+  Con un libro abierto aparece **Idioma de este libro**: Automático (lo detecta del texto), Español o Inglés; queda
+  guardado en cada libro.
   La app prefiere sola las voces «Premium», «Mejorada» o «Natural». Para conseguirlas gratis en el iPhone:
   Ajustes › Accesibilidad › Contenido leído › Voces › Español → descarga una voz «Mejorada» o «Premium».
   En Windows, con Microsoft Edge aparecen voces «Natural». (Las voces de Siri no están disponibles para apps web.)

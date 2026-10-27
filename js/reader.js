@@ -779,7 +779,8 @@ export class Reader {
     if (tok !== this.speakTok || !this.speaking) return;
     text = text.trim();
     if (!text) return this.afterSpoken(tok);
-    const lang = this.speechLang(text);
+    // El idioma elegido para este libro (Sonido › Idioma del libro) o, si no, el que se detecta en el texto.
+    const lang = ['es', 'en'].includes(this.book.speechLang) ? this.book.speechLang : this.speechLang(text);
     prefs.set('bib.lastLang', lang);
     const voice = voiceFor(lang);
     // Frases cortas: los teléfonos cortan los textos muy largos.

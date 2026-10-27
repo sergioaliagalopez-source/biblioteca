@@ -1,5 +1,6 @@
 // Orquesta la app: estantería 3D, categorías, importación de PDF y el lector.
 import { db, local, uid, prefs } from './db.js';
+import { clamp } from './textures.js';
 import { folderSupported, pickFolder, hasPermission, FolderStore } from './cloud.js';
 import { Library3D } from './library3d.js';
 import { Reader, HL_COLORS } from './reader.js';
@@ -345,7 +346,7 @@ function renderTabs() {
   ];
   $('#tabs').innerHTML =
     tabs.map((t) => `<button class="tab ${t.id === state.active ? 'active' : ''}" data-id="${t.id}">${esc(t.name)}<sup>${t.n || ''}</sup></button>`).join('') +
-    `<button class="tab add" data-add title="Nueva categoría">+</button>`;
+    `<button class="tab add" data-add title="Nueva categoría" aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
 }
 
 function setActive(id) {
@@ -852,34 +853,66 @@ function updateGoal() {
 
 // ---------- Modo enfoque ----------
 
+const FOCUS_TIMES = ['5', '10', '15', '30', '60'];
+
 function showFocusStart() {
   if (reader.focus) return;
-  const last = prefs.get('bib.focusMin') ?? '30';
+  const custom = prefs.get('bib.focusCustom') || '45';
+  let min = prefs.get('bib.focusMin') || '30';
+  let isCustom = !FOCUS_TIMES.includes(min);
   modal(
     `<div class="ornament">❦</div><h2>Modo enfoque</h2>
      <p class="sub">Sólo el libro: pasar hojas, la cinta, resaltar y escuchar. Para salir, mantén apretado el candado dos segundos.</p>
-     <div class="focus-times">${[['15', '15 min'], ['30', '30 min'], ['45', '45 min'], ['0', 'Sin límite']].map(([v, l]) => `<button class="chip ${v === last ? 'on' : ''}" data-min="${v}">${l}</button>`).join('')}</div>
+     <div class="focus-times">
+       ${FOCUS_TIMES.map((v) => `<button class="chip ${!isCustom && v === min ? 'on' : ''}" data-min="${v}">${v} min</button>`).join('')}
+       <button class="chip ${isCustom ? 'on' : ''}" data-custom title="Elegir otro tiempo" aria-label="Elegir otro tiempo"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+     </div>
+     <div class="focus-custom" ${isCustom ? '' : 'hidden'}>
+       <button class="chip" data-step="-5" aria-label="Cinco minutos menos">−</button>
+       <label><input type="number" min="1" max="600" inputmode="numeric" value="${isCustom ? min : custom}" aria-label="Minutos"><span>minutos</span></label>
+       <button class="chip" data-step="5" aria-label="Cinco minutos más">+</button>
+     </div>
      <p class="focus-tip">Para que el teléfono no te interrumpa, activa también el modo <b>Concentración</b> (en el iPhone: Centro de control › Concentración).</p>
      <div class="actions"><span class="grow"></span><button class="btn-ghost" data-act="cancel">Cancelar</button><button class="btn-dark" data-act="start">Empezar</button></div>`,
     {
       onMount(card, close) {
-        let min = last;
+        const box = card.querySelector('.focus-custom');
+        const input = box.querySelector('input');
+        const value = () => String(clamp(Math.round(+input.value || 0), 1, 600));
+        const select = (el) => card.querySelectorAll('.focus-times .chip').forEach((c) => c.classList.toggle('on', c === el));
         card.addEventListener('click', (e) => {
           const chip = e.target.closest('[data-min]');
           if (chip) {
             min = chip.dataset.min;
-            card.querySelectorAll('[data-min]').forEach((c) => c.classList.toggle('on', c === chip));
+            isCustom = false;
+            box.hidden = true;
+            return select(chip);
+          }
+          if (e.target.closest('[data-custom]')) {
+            isCustom = true;
+            box.hidden = false;
+            select(e.target.closest('[data-custom]'));
+            return input.focus();
+          }
+          const step = e.target.closest('[data-step]');
+          if (step) {
+            input.value = clamp((+input.value || 0) + +step.dataset.step, 1, 600);
             return;
           }
           const act = e.target.closest('[data-act]')?.dataset.act;
           if (act === 'cancel') close(null);
           else if (act === 'start') {
+            if (isCustom) {
+              min = value();
+              prefs.set('bib.focusCustom', min);
+            }
             prefs.set('bib.focusMin', min);
             close(null);
             reader.startFocus(+min);
-            toast(+min ? `Enfoque por ${min} minutos. ¡Buena lectura!` : 'Enfoque sin límite. ¡Buena lectura!', 3000);
+            toast(`Enfoque por ${min} minutos. ¡Buena lectura!`, 3000);
           }
         });
+        input.addEventListener('keydown', (e) => e.key === 'Enter' && card.querySelector('[data-act=start]').click());
       },
     }
   );
@@ -1830,8 +1863,17 @@ function voiceSection() {
     })
     .join('');
   const rate = speechRate();
+  // Con un libro abierto: en qué idioma leerlo (automático detecta el idioma del texto).
+  const book = state.reading;
+  const cur = book?.speechLang || 'auto';
+  const langRow = book
+    ? `<div class="sp-row"><span>Idioma de este libro</span><div class="sp-chips sp-lang">${[['auto', 'Automático'], ['es', 'Español'], ['en', 'Inglés']]
+        .map(([v, l]) => `<button class="sp-chip ${v === cur ? 'on' : ''}" data-slang="${v}">${l}</button>`)
+        .join('')}</div></div>`
+    : '';
   return `
     <div class="sp-label">Voz de lectura</div>
+    ${langRow}
     ${groups || '<p class="sp-note">Todavía no cargan las voces del sistema…</p>'}
     <label class="sp-row"><span>Velocidad <b data-ratev>${rate.toFixed(2).replace('.', ',')}×</b></span>
       <input type="range" class="gold-range" min="70" max="150" step="5" value="${Math.round(rate * 100)}" data-rate></label>
@@ -1951,7 +1993,19 @@ function bindUI() {
   $('#soundPanel').addEventListener('click', (e) => {
     if (e.target.closest('[data-try]')) {
       reader.stopSpeaking();
-      return sample(voiceFor(prefs.get('bib.lastLang') || 'es') || listVoices()[0]);
+      const lang = ['es', 'en'].includes(state.reading?.speechLang) ? state.reading.speechLang : prefs.get('bib.lastLang') || 'es';
+      return sample(voiceFor(lang) || listVoices()[0]);
+    }
+    const slang = e.target.closest('[data-slang]');
+    if (slang && state.reading) {
+      const book = state.reading;
+      if (slang.dataset.slang === 'auto') delete book.speechLang;
+      else book.speechLang = slang.dataset.slang;
+      db.put('books', book);
+      renderSoundPanel();
+      if (reader.speaking) reader.restartSpeech();
+      else if (book.speechLang) sample(voiceFor(book.speechLang));
+      return;
     }
     if (e.target.closest('[data-voicehelp]')) {
       closeSoundPanel();
@@ -1993,6 +2047,15 @@ function bindUI() {
   onVoices(() => !$('#soundPanel').hidden && renderSoundPanel());
   // La primera vez que se escucha con una voz robótica, se sugiere bajar una mejor.
   $('#rListen').addEventListener('click', () => {
+    // Dice en qué idioma lee y dónde cambiarlo (las primeras veces).
+    const tips = +prefs.get('bib.langTips') || 0;
+    if (reader.speaking && tips < 3) {
+      prefs.set('bib.langTips', String(tips + 1));
+      setTimeout(() => {
+        const lang = prefs.get('bib.lastLang') === 'en' ? 'inglés' : 'español';
+        toast(`Leyendo en ${lang}. Para cambiar el idioma o la voz: botón de sonido › Idioma de este libro.`, 6000);
+      }, 1200);
+    }
     if (!reader.speaking || prefs.get('bib.voiceTip') || hasGoodVoice('es')) return;
     prefs.set('bib.voiceTip', '1');
     setTimeout(() => toast('Consejo: para una voz más natural, descarga una voz «Mejorada» o «Premium». Mira cómo en Sonido › Voces más naturales.', 8000), 1500);
