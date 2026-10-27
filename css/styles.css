@@ -1056,3 +1056,27 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
   .theme-cards { grid-auto-columns: 78%; }
   .tcol { font-size: 15px; gap: 6px; padding: 0 6px; }
 }
+
+/* ---------- Hoja completa: sin el libro 3D, la página es la pantalla ---------- */
+#reader.flat { background: var(--paperTex), #f3ead6; }
+#reader.flat[data-paper="sepia"] { background: var(--paperTex), #e8d4ac; }
+#reader.flat[data-paper="night"] { background: #1c1915; }
+#reader.flat .reader-desk, #reader.flat .reader-glow, #reader.flat .board, #reader.flat .edges, #reader.flat .spine-groove,
+#reader.flat .book-shadow, #reader.flat .spine-face, #reader.flat .tail-edge, #reader.flat .cover,
+#reader.flat .ribbon, #reader.flat .ribbon-tail, #reader.flat .page .gutter { display: none !important; }
+#reader.flat .stage { padding: 0; perspective: none; }
+#reader.flat .book3d, #reader.flat .book3d.closed { transform: none; transition: none; }
+#reader.flat .book-wrap { transform-style: flat; }
+#reader.flat .page { box-shadow: none; }
+/* en doble página, un filete muy suave marca el centro */
+#reader.flat .book3d:not(.single) #pageR::before { content: ''; position: absolute; left: 0; top: 4%; bottom: 4%; width: 1px; background: rgba(90, 60, 30, 0.12); z-index: 2; pointer-events: none; }
+#reader.flat[data-paper="night"] .book3d:not(.single) #pageR::before { background: rgba(255, 255, 255, 0.08); }
+/* las barras flotan sobre la hoja: más sólidas para leerse sobre el papel */
+#reader.flat .reader-top { background: linear-gradient(to bottom, rgba(16, 11, 7, 0.78), rgba(16, 11, 7, 0)); padding-bottom: 26px; }
+#reader.flat .r-title span, #reader.flat .r-title em { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+#rFlat.active { color: var(--gold-2); border-color: var(--gold-line); }
+@media (max-width: 480px) {
+  #rFlat span { display: none; }
+}
+/* en el modo enfoque se puede seguir alternando entre libro 3D y hoja completa */
+#reader.focus .reader-top #rFlat { visibility: visible; }

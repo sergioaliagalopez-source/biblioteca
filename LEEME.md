@@ -51,6 +51,9 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
 - **Papel**: botón de arriba en el lector que cambia entre **Día**, **Sepia** (más cálido) y **Noche** (letras claras
   sobre fondo oscuro, para leer a oscuras).
 - **Progreso**: al pasar el ratón (o mantener apretado) un libro se ve la página y el porcentaje leído.
+- **Pantalla completa**: botón de arriba en el lector (o tecla `F`). Deja de lado el libro 3D: la hoja ocupa toda
+  la pantalla, como en un lector electrónico, y las páginas pasan con un deslizamiento suave. En la computadora y el
+  iPad también pone el navegador a pantalla completa. Se recuerda para la próxima vez; **Libro 3D** vuelve al libro.
 - **Modo enfoque**: botón del candado arriba en el lector. Eliges 5, 10, 15, 30 o 60 minutos, o **+** para poner tu
   propio tiempo (de 1 a 600 minutos, con − y + de a 5), y quedan sólo
   pasar hojas, la cinta, resaltar y escuchar; no se puede volver a la biblioteca. Para salir, **mantén apretado el
@@ -120,7 +123,7 @@ vuelve al principio de la página. En el modo enfoque también se puede usar.
 
 ## Atajos en el lector
 
-`→` / `←` pasar hoja · `B` cinta · `H` resaltar · `+` / `−` zoom · `Inicio` / `Fin` · `Esc` volver a la biblioteca
+`→` / `←` pasar hoja · `F` pantalla completa · `B` cinta · `H` resaltar · `+` / `−` zoom · `Inicio` / `Fin` · `Esc` volver a la biblioteca
 
 ## Guardar en la nube (OneDrive)
 

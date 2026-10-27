@@ -17,6 +17,10 @@ export const HL_COLORS = {
   orange: { name: 'Naranja', fill: 'rgba(245, 170, 95, 0.6)', dot: '#f2aa62' },
 };
 const FLIP_MS = 720;
+const FLAT_ICON = {
+  full: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>',
+  book: '<svg viewBox="0 0 24 24"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z"/><path d="M12 6.5v13"/></svg>',
+};
 const CLOSED_SCALE = 0.92;
 const $ = (s) => document.querySelector(s);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -45,6 +49,9 @@ export class Reader {
     this.busy = false;
     this.lastActivity = 0;
     this.setPaper(prefs.get('bib.paper') || 'day');
+    // Hoja completa: sin el libro 3D, la página ocupa toda la pantalla, como un lector electrónico.
+    this.flat = prefs.get('bib.flat') === '1';
+    this.el.classList.toggle('flat', this.flat);
     document.documentElement.style.setProperty('--paperTex', `url(${paperDataURL()})`);
     document.documentElement.style.setProperty('--deskTex', `url(${deskDataURL()})`);
     this.bind();
@@ -70,9 +77,24 @@ export class Reader {
     return [v.left, v.right].filter((p) => p != null && p >= 1 && p <= this.N);
   }
 
-  measure(aspect, N) {
+  measure(aspect, N, flat = this.flat) {
     const vw = innerWidth, vh = innerHeight;
     const double = this.mode === 'double' || (this.mode === 'auto' && vw >= 860 && vw / vh > 1.05);
+    if (flat) {
+      // la hoja llena el alto de la pantalla (o el ancho, si no entra); sin tapas ni cantos
+      let ph = vh, pw = ph * aspect;
+      const totalW = (double ? 2 : 1) * pw;
+      if (totalW > vw) {
+        ph *= vw / totalW;
+        pw *= vw / totalW;
+      }
+      const fitW = vw / ((double ? 2 : 1) * pw);
+      const width = fitW > 1.08 ? fitW : null;
+      this.zoomLevels = [1, ...(width ? [width] : []), ...ZOOM_STEPS.map((k) => k * (width || 1)).filter((z) => z <= 3.05)];
+      this.zoomWidth = width;
+      const z = this.zoomLevels[clamp(this.zoomIdx, 0, this.zoomLevels.length - 1)];
+      return { double, pw: Math.round(pw * z), ph: Math.round(ph * z), bd: 0, T: 0 };
+    }
     const bdK = 0.026;
     // Deja aire arriba para el título y abajo para la cola de la cinta.
     let ph = (vh - 160) / (1 + 2 * bdK);
@@ -101,7 +123,7 @@ export class Reader {
   closedFraction(book) {
     const zoom = this.zoomIdx;
     this.zoomIdx = 0;
-    const { ph, bd } = this.measure(book.pageAspect || book.aspect || 0.66, book.pageCount || 200);
+    const { ph, bd } = this.measure(book.pageAspect || book.aspect || 0.66, book.pageCount || 200, false);
     this.zoomIdx = zoom;
     return ((ph + 2 * bd) * CLOSED_SCALE) / innerHeight;
   }
@@ -450,13 +472,15 @@ export class Reader {
     this.s = clamp(this.spreadOf(start), this.minS, this.maxS);
     this.updateEdges();
 
-    this.bk.classList.add('closed', 'no-anim');
-    this.bk.classList.remove('opened');
+    this.bk.classList.add('no-anim');
+    this.bk.classList.toggle('closed', !this.flat);
+    this.bk.classList.toggle('opened', this.flat);
     this.cover.getAnimations().forEach((a) => a.cancel());
-    this.cover.style.display = 'block';
+    this.cover.style.display = this.flat ? 'none' : 'block';
     this.ribbon.style.display = 'none';
     this.updateRibbon(false);
     this.updateUI();
+    this.updateFlatButton();
     this.el.classList.add('open');
     this.stage.scrollTo(0, 0);
     await frame();
@@ -465,9 +489,14 @@ export class Reader {
     this.isOpen = true;
 
     const v = this.vis(this.s);
-    await Promise.all([this.paintSpread(), this.paint(this.coverPage, this.double ? v.left : null)]);
-    await wait(380);
-    await this.openCover();
+    if (this.flat) {
+      await this.paintSpread();
+      this.flatEnter(true);
+    } else {
+      await Promise.all([this.paintSpread(), this.paint(this.coverPage, this.double ? v.left : null)]);
+      await wait(380);
+      await this.openCover();
+    }
     this.updateRibbon(false);
     this.prefetch();
     this.showUI();
@@ -509,6 +538,20 @@ export class Reader {
     if (this.hlMode) await this.setHighlightMode(false);
     this.hideUI(true);
     this.flushSave();
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    if (this.flat) {
+      // en hoja completa no hay tapa que cerrar: la página se desvanece y vuelve la biblioteca
+      this.el.classList.remove('visible');
+      this.onClose?.();
+      await wait(500);
+      this.el.classList.remove('open');
+      this.pdf?.destroy();
+      this.pdf = null;
+      this.cache.clear();
+      this.isOpen = false;
+      this.closing = false;
+      return;
+    }
     const v = this.vis(this.s);
     await this.paint(this.coverPage, this.double ? v.left : null);
     this.ribbon.style.display = 'none';
@@ -558,6 +601,7 @@ export class Reader {
     target = clamp(target, this.minS, this.maxS);
     if (target === this.s) return;
     const dir = target > this.s ? 1 : -1;
+    if (this.flat) return this.flatGo(target, dir);
     this.busy = true;
     const cur = this.vis(this.s);
     const nxt = this.vis(target);
@@ -646,6 +690,61 @@ export class Reader {
     this.s = target;
     this.busy = false;
     this.afterMove();
+  }
+
+  // Hoja completa: la página nueva entra deslizándose un poco desde el lado hacia el que se avanza.
+  async flatGo(target, dir) {
+    this.busy = true;
+    this.clearTextLayers();
+    this.hidePop();
+    const nxt = this.vis(target);
+    await Promise.all(this.realPages(target).map((p) => this.getCanvas(p)));
+    await Promise.all([this.paint(this.pageL, nxt.left), this.paint(this.pageR, nxt.right)]);
+    sound.flip();
+    const kf = [{ opacity: 0.35, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: 'none' }];
+    const opts = { duration: 260, easing: 'cubic-bezier(.2,.7,.3,1)' };
+    const anims = [this.pageL, this.pageR].map((h) => h.querySelector('.content').animate(kf, opts));
+    this.s = target;
+    await anims[1].finished.catch(() => {});
+    this.busy = false;
+    this.afterMove();
+  }
+
+  flatEnter(animate) {
+    if (!animate) return;
+    const kf = [{ opacity: 0, transform: 'scale(0.985)' }, { opacity: 1, transform: 'none' }];
+    for (const h of [this.pageL, this.pageR]) h.animate(kf, { duration: 450, easing: 'ease-out' });
+  }
+
+  // Alterna entre el libro 3D y la hoja completa. En la computadora y el iPad también pide la pantalla
+  // completa del navegador (el iPhone no la permite; instalada en la pantalla de inicio ya va sin barras).
+  async setFlat(on) {
+    if (!this.isOpen || this.busy || this.closing) return;
+    this.flat = on;
+    prefs.set('bib.flat', on ? '1' : '0');
+    this.el.classList.toggle('flat', on);
+    this.updateFlatButton();
+    const fs = document.documentElement.requestFullscreen && document.fullscreenEnabled;
+    if (on && fs && !document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    if (!on && document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+    this.zoomIdx = 0;
+    this.bk.classList.add('no-anim');
+    this.bk.classList.remove('closed');
+    this.bk.classList.add('opened');
+    this.cover.style.display = 'none';
+    await this.relayout();
+    await frame();
+    this.bk.classList.remove('no-anim');
+    this.flatEnter(on);
+    this.showUI();
+  }
+
+  updateFlatButton() {
+    const btn = $('#rFlat');
+    if (!btn) return;
+    btn.classList.toggle('active', this.flat);
+    btn.title = this.flat ? 'Volver a ver el libro en 3D (F)' : 'Leer con la hoja a pantalla completa (F)';
+    btn.innerHTML = (this.flat ? FLAT_ICON.book : FLAT_ICON.full) + `<span>${this.flat ? 'Libro 3D' : 'Pantalla completa'}</span>`;
   }
 
   next() {
@@ -1015,6 +1114,7 @@ export class Reader {
       else if (k === 'h' || k === 'H') this.setHighlightMode(!this.hlMode);
       else if (k === 'Escape' && this.hlMode) this.setHighlightMode(false);
       else if (k === 'Escape' && !this.focus) this.close();
+      else if (k === 'f' || k === 'F') this.setFlat(!this.flat);
       else if (k === '+' || k === '=') this.setZoom(this.zoomIdx + 1);
       else if (k === '-') this.setZoom(this.zoomIdx - 1);
       else return;
@@ -1099,6 +1199,9 @@ export class Reader {
     $('#rBack').addEventListener('click', () => this.close());
     $('#rInfo').addEventListener('click', () => this.onEdit?.(this.book));
     $('#rToc').addEventListener('click', () => this.onToc?.());
+    $('#rFlat').addEventListener('click', () => this.setFlat(!this.flat));
+    // si se sale de la pantalla completa del navegador (Esc), la hoja completa sigue: sólo se reacomoda
+    document.addEventListener('fullscreenchange', () => this.isOpen && this.relayout());
     $('#rFocus').addEventListener('click', () => this.onFocus?.());
     $('#rListen').addEventListener('click', () => this.toggleSpeech());
     // Candado: mantener apretado dos segundos para salir del modo enfoque.
