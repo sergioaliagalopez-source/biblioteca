@@ -51,9 +51,10 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
 - **Papel**: botón de arriba en el lector que cambia entre **Día**, **Sepia** (más cálido) y **Noche** (letras claras
   sobre fondo oscuro, para leer a oscuras).
 - **Progreso**: al pasar el ratón (o mantener apretado) un libro se ve la página y el porcentaje leído.
-- **Pantalla completa**: botón de arriba en el lector (o tecla `F`). Deja de lado el libro 3D: la hoja ocupa toda
-  la pantalla, como en un lector electrónico, y las páginas pasan con un deslizamiento suave. En la computadora y el
-  iPad también pone el navegador a pantalla completa. Se recuerda para la próxima vez; **Libro 3D** vuelve al libro.
+- **Pantalla completa**: botón de arriba en el lector (o tecla `F`). Deja de lado el libro 3D y los márgenes: el
+  bloque de texto ocupa toda la pantalla, sin barras ni opciones a la vista (ni al pasar de página). Se pasa de hoja
+  con los costados o deslizando; para salir, `Esc` o `F`, mover el ratón y tocar «Salir de pantalla completa», o en
+  el teléfono tocar el centro de la página. En la computadora y el iPad también pone el navegador a pantalla completa.
 - **Modo enfoque**: botón del candado arriba en el lector. Eliges 5, 10, 15, 30 o 60 minutos, o **+** para poner tu
   propio tiempo (de 1 a 600 minutos, con − y + de a 5), y quedan sólo
   pasar hojas, la cinta, resaltar y escuchar; no se puede volver a la biblioteca. Para salir, **mantén apretado el
@@ -117,9 +118,9 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
 
 El único zoom de la app es el del lector (botones **−** y **+**; la pantalla no se agranda con doble toque ni con
 pellizco). Los niveles se adaptan a cada pantalla: **Ajustar** (la página entera), **Ancho** (la página ocupa todo
-el ancho, si así se agranda) y pasos más grandes hasta 3×. En la computadora, el nombre del nivel aparece entre el
-− y el +; tocarlo vuelve a «Ajustar». Al acercar se mantiene centrado lo que estabas mirando, y al pasar de hoja se
-vuelve al principio de la página. En el modo enfoque también se puede usar.
+el ancho), **Texto** (los márgenes quedan afuera y el bloque de texto llena el ancho, con el principio del texto
+arriba) y pasos más grandes hasta 3×. En la computadora el nombre del nivel aparece entre el − y el +; tocarlo vuelve
+a «Ajustar». Al pasar de hoja con zoom se vuelve al principio del texto de la página nueva.
 
 ## Atajos en el lector
 

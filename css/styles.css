@@ -1068,12 +1068,19 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 #reader.flat .book3d, #reader.flat .book3d.closed { transform: none; transition: none; }
 #reader.flat .book-wrap { transform-style: flat; }
 #reader.flat .page { box-shadow: none; }
-/* en doble página, un filete muy suave marca el centro */
-#reader.flat .book3d:not(.single) #pageR::before { content: ''; position: absolute; left: 0; top: 4%; bottom: 4%; width: 1px; background: rgba(90, 60, 30, 0.12); z-index: 2; pointer-events: none; }
-#reader.flat[data-paper="night"] .book3d:not(.single) #pageR::before { background: rgba(255, 255, 255, 0.08); }
-/* las barras flotan sobre la hoja: más sólidas para leerse sobre el papel */
-#reader.flat .reader-top { background: linear-gradient(to bottom, rgba(16, 11, 7, 0.78), rgba(16, 11, 7, 0)); padding-bottom: 26px; }
-#reader.flat .r-title span, #reader.flat .r-title em { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+/* sin barras ni bordes: sólo la hoja (las opciones vuelven al salir de la pantalla completa) */
+#reader.flat .reader-top, #reader.flat .reader-bar, #reader.flat .hl-bar, #reader.flat .sel-bar, #reader.flat .hl-pop { display: none !important; }
+#reader.flat .stage { scrollbar-width: none; }
+#reader.flat .stage::-webkit-scrollbar { display: none; }
+.flat-exit {
+  position: absolute; z-index: 4; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right));
+  display: none; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px;
+  background: rgba(16, 11, 7, 0.82); border: 1px solid var(--gold-line); color: var(--cream);
+  font-family: var(--serif); font-size: 15px; opacity: 0; transition: opacity 0.35s;
+}
+.flat-exit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#reader.flat .flat-exit { display: inline-flex; pointer-events: none; }
+#reader.flat .flat-exit.show { opacity: 1; pointer-events: auto; }
 #rFlat.active { color: var(--gold-2); border-color: var(--gold-line); }
 @media (max-width: 480px) {
   #rFlat span { display: none; }

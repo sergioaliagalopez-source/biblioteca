@@ -263,10 +263,24 @@ export async function frameOf(pdf, split) {
 
 // Recorte de la página v según cómo se lee el libro: el encuadre, la mitad de la hoja o la hoja entera.
 // [x, y, ancho, alto] en unidades del PDF desde arriba a la izquierda.
-function boxFor(v, split, frame, W, H) {
+export function boxFor(v, split, frame, W, H) {
   if (frame && (split || v > 1)) return frame[v % 2 ? 'odd' : 'even'];
   if (split) return v % 2 ? [0, 0, W * split, H] : [W * split, 0, W * (1 - split), H];
   return [0, 0, W, H];
+}
+
+// Encuadre de lectura a pantalla completa: el bloque de texto con un margen mínimo (sin el aire del libro),
+// para que la letra quede lo más grande posible.
+export function readingFrame(frame) {
+  if (!frame) return null;
+  const tight = (box, inner) => {
+    const [x, y, w, h] = box;
+    const cx = x + w * (inner ? MARGIN.inner : MARGIN.outer), cy = y + h * MARGIN.top;
+    const cw = w * (1 - MARGIN.inner - MARGIN.outer), ch = h * (1 - MARGIN.top - MARGIN.bottom);
+    const mx = cw * 0.045, my = ch * 0.03;
+    return [cx - mx, cy - my, cw + 2 * mx, ch + 2 * my];
+  };
+  return { ...frame, odd: tight(frame.odd, true), even: tight(frame.even, false) };
 }
 
 // Una página recortada que se comporta como una página de PDF.js (lo que usa el lector).
