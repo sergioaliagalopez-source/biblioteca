@@ -2,7 +2,7 @@
 // Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
 // viejos con nuevos); sin conexión usa la copia guardada.
 // Al publicar una versión nueva, sube el número de VERSION.
-const VERSION = 'biblioteca-v12';
+const VERSION = 'biblioteca-v13';
 
 const SHELL = [
   './',
@@ -28,6 +28,7 @@ const SHELL = [
   'js/backup.js',
   'js/dictionary.js',
   'js/quotecard.js',
+  'js/voices.js',
   'vendor/three.module.js',
   'vendor/RoomEnvironment.js',
   'vendor/pdf.min.mjs',

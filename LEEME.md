@@ -48,6 +48,10 @@ palabra, ajusta la selección con las manijas y toca **Resaltar**. Los PDF se ag
   (La app no puede silenciar el teléfono: para eso activa también el modo Concentración del iPhone.)
 - **Escuchar**: botón de los auriculares. El teléfono o la computadora lee las páginas en voz alta y pasa las hojas
   solo. Vuelve a tocarlo para parar.
+  En **Sonido › Voz de lectura** eliges la voz (una para español y otra para inglés) y la velocidad, y la pruebas.
+  La app prefiere sola las voces «Premium», «Mejorada» o «Natural». Para conseguirlas gratis en el iPhone:
+  Ajustes › Accesibilidad › Contenido leído › Voces › Español → descarga una voz «Mejorada» o «Premium».
+  En Windows, con Microsoft Edge aparecen voces «Natural». (Las voces de Siri no están disponibles para apps web.)
 - **Diccionario**: en **Resaltar**, selecciona una sola palabra y toca **Definir** (fuente: Wikcionario, con enlace
   a la RAE). Las formas como «dioses» o «tenía» muestran la palabra base.
 - **Tarjetas de citas**: toca un resaltado → **Compartir** (o el ícono de compartir en «Mis resaltados») y se arma

@@ -3,6 +3,7 @@
 import { openPdf, renderPage, pdfUtil } from './pdfdoc.js';
 import { prefs } from './db.js';
 import { sound } from './sound.js';
+import { voiceFor, speechRate } from './voices.js';
 import { marbleDataURL, clothDataURL, paperDataURL, deskDataURL, shade, hashStr, clamp } from './textures.js';
 
 const ZOOMS = [1, 1.3, 1.65, 2.1];
@@ -767,19 +768,24 @@ export class Reader {
     text = text.trim();
     if (!text) return this.afterSpoken(tok);
     const lang = this.speechLang(text);
-    const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
-    const voice = voices.find((v) => /google|siri|enhanced|premium|natural/i.test(v.name)) || voices.find((v) => v.localService) || voices[0];
+    prefs.set('bib.lastLang', lang);
+    const voice = voiceFor(lang);
     // Frases cortas: los teléfonos cortan los textos muy largos.
     const chunks = text.match(/[^.!?;:]+[.!?;:]*\s*/g)?.flatMap((c) => (c.length > 220 ? c.match(/.{1,200}(\s|$)/g) : [c])) || [text];
     chunks.forEach((c, i) => {
       const u = new SpeechSynthesisUtterance(c.trim());
       u.lang = voice?.lang || (lang === 'en' ? 'en-US' : 'es-ES');
       if (voice) u.voice = voice;
-      u.rate = 0.98;
+      u.rate = speechRate();
       u.onstart = () => (this.lastActivity = Date.now());
       if (i === chunks.length - 1) u.onend = () => this.afterSpoken(tok);
       speechSynthesis.speak(u);
     });
+  }
+
+  // Cambió la voz o la velocidad mientras leía: retoma la página con la nueva.
+  restartSpeech() {
+    if (this.speaking) this.speakSpread();
   }
 
   async afterSpoken(tok) {

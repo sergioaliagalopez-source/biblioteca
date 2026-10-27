@@ -961,3 +961,19 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
   #addBook { font-size: 0; padding: 7px 9px 6px; }
   #addBook::before { content: '+ PDF'; font-size: 12px; }
 }
+
+/* Voz de lectura en el panel de sonido */
+.sp-select {
+  width: 100%; margin-top: 4px; padding: 6px 28px 6px 8px; border-radius: 4px; border: 1px solid var(--gold-line);
+  background: rgba(255, 255, 255, 0.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23c6a15b'/%3E%3C/svg%3E") no-repeat right 9px center;
+  color: var(--cream); font-family: var(--text); font-size: 15px; appearance: none; -webkit-appearance: none;
+}
+.sp-select option { color: #24170d; }
+.sp-row b { font-weight: 600; color: var(--gold-2); }
+.sp-voice { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.sp-note { margin: 0 0 10px; font-size: 14px; font-style: italic; color: var(--cream-dim); }
+#soundPanel { max-height: calc(100vh - 24px); overflow-y: auto; }
+.vh h4 { margin: 14px 0 6px; font-family: var(--serif); font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; color: #8a6a35; }
+.vh ol, .vh ul { margin: 0; padding-left: 22px; }
+.vh li { margin: 5px 0; line-height: 1.45; }
+.vh-note { margin: 8px 0 0; font-size: 14px; font-style: italic; color: var(--ink-soft); }

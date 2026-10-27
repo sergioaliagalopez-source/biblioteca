@@ -12,6 +12,7 @@ import { stats, duration, dayKey } from './stats.js';
 import { buildBackup, readBackup, saveFile } from './backup.js';
 import { define, raeUrl } from './dictionary.js';
 import { quoteCard } from './quotecard.js';
+import { listVoices, voiceFor, setVoice, voiceLabel, speechRate, setSpeechRate, sample, onVoices, hasGoodVoice } from './voices.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -1785,7 +1786,13 @@ function startAmbientIfNeeded() {
 
 function updateSoundIcons() {
   const silent = sound.getVolume('master') === 0 || effectiveAmbient() === 'off';
-  for (const id of ['#soundBtn', '#rSound']) $(id).innerHTML = silent ? ICON.muted : ICON.speaker;
+  // Sólo si cambia: reemplazar el ícono en medio de un toque hace que el navegador pierda el clic.
+  for (const id of ['#soundBtn', '#rSound']) {
+    const icon = silent ? 'muted' : 'speaker';
+    if ($(id).dataset.icon === icon) continue;
+    $(id).dataset.icon = icon;
+    $(id).innerHTML = ICON[icon];
+  }
 }
 
 function renderSoundPanel() {
@@ -1800,12 +1807,71 @@ function renderSoundPanel() {
     <div class="sp-chips">${Object.entries(AMBIENTS).map(chip).join('')}</div>
     ${slider('master', 'Volumen general')}
     ${slider('ambient', 'Ambiente')}
-    ${slider('fx', 'Hojas y cinta')}`;
+    ${slider('fx', 'Hojas y cinta')}
+    ${voiceSection()}`;
   $('#soundPanel').querySelectorAll('.gold-range').forEach(paintRange);
 }
 
+// Voz para «Escuchar»: una por idioma (la elegida o la más natural que haya) y la velocidad.
+function voiceSection() {
+  const voices = listVoices();
+  if (!('speechSynthesis' in window)) return '';
+  const groups = [['es', 'Español'], ['en', 'Inglés']]
+    .map(([lang, name]) => {
+      const list = voices.filter((v) => v.lang.toLowerCase().startsWith(lang));
+      if (!list.length) return '';
+      const cur = voiceFor(lang);
+      return `<label class="sp-row"><span>Voz en ${name.toLowerCase()}</span>
+        <select class="sp-select" data-voice="${lang}">${list.map((v) => `<option value="${esc(v.voiceURI)}" ${v === cur ? 'selected' : ''}>${esc(voiceLabel(v))}</option>`).join('')}</select></label>`;
+    })
+    .join('');
+  const rate = speechRate();
+  return `
+    <div class="sp-label">Voz de lectura</div>
+    ${groups || '<p class="sp-note">Todavía no cargan las voces del sistema…</p>'}
+    <label class="sp-row"><span>Velocidad <b data-ratev>${rate.toFixed(2).replace('.', ',')}×</b></span>
+      <input type="range" class="gold-range" min="70" max="150" step="5" value="${Math.round(rate * 100)}" data-rate></label>
+    <div class="sp-voice">
+      <button class="sp-chip" data-try>Probar la voz</button>
+      <button class="link-light" data-voicehelp>Voces más naturales</button>
+    </div>`;
+}
+
+function showVoiceHelp() {
+  const good = hasGoodVoice('es');
+  modal(
+    `<div class="ornament">❦</div><h2>Voces más naturales</h2>
+     <p class="sub">${good ? 'Ya tienes una voz de buena calidad: elígela en Sonido › Voz de lectura.' : 'Las voces que trae el sistema de fábrica suenan robóticas. Puedes descargar gratis voces mucho más naturales:'}</p>
+     <div class="vh">
+       <h4>iPhone y iPad</h4>
+       <ol>
+         <li>Abre <b>Ajustes › Accesibilidad › Contenido leído › Voces</b>.</li>
+         <li>Entra en <b>Español</b> y elige una variante (España o México).</li>
+         <li>Toca una voz que diga <b>«Mejorada»</b> o <b>«Premium»</b> (por ejemplo Mónica, Paulina o Jorge) y descárgala. Pesa entre 100 y 400 MB: mejor con wifi.</li>
+         <li>Cierra y vuelve a abrir Biblioteca, y elige la voz en <b>Sonido › Voz de lectura</b>.</li>
+       </ol>
+       <p class="vh-note">Las voces de Siri no están disponibles para las apps web.</p>
+       <h4>Computadora</h4>
+       <ul>
+         <li><b>Windows:</b> abre la app en <b>Microsoft Edge</b>: trae voces «Natural» que suenan casi humanas (necesitan internet).</li>
+         <li><b>Mac:</b> Ajustes del Sistema › Accesibilidad › Contenido leído › Voz del sistema › Gestionar voces, y descarga una «Mejorada» o «Premium».</li>
+       </ul>
+       <h4>Android</h4>
+       <ul><li>Ajustes › Sistema › Idiomas › Salida de texto a voz: usa el motor de Google y descarga los datos de voz en español.</li></ul>
+     </div>
+     <div class="actions"><span class="grow"></span><button class="btn-dark" data-act="ok">Entendido</button></div>`,
+    {
+      wide: true,
+      onMount(card, close) {
+        card.querySelector('[data-act=ok]').onclick = () => close(null);
+      },
+    }
+  );
+}
+
 function paintRange(r) {
-  r.style.setProperty('--p', `${r.value}%`);
+  const min = +r.min || 0, max = +r.max || 100;
+  r.style.setProperty('--p', `${((r.value - min) / (max - min)) * 100}%`);
 }
 
 function toggleSoundPanel(anchor) {
@@ -1867,7 +1933,26 @@ function bindUI() {
     else if (e.target.closest('[data-close]') || e.target.id === 'themes') closeThemes();
   });
   $('#soundBtn').addEventListener('click', (e) => toggleSoundPanel(e.currentTarget));
+  $('#soundPanel').addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-voice]');
+    if (sel) {
+      const v = listVoices().find((x) => x.voiceURI === sel.value);
+      if (v) {
+        setVoice(v);
+        sample(v);
+        reader.restartSpeech();
+      }
+    } else if (e.target.closest('[data-rate]')) reader.restartSpeech();
+  });
   $('#soundPanel').addEventListener('click', (e) => {
+    if (e.target.closest('[data-try]')) {
+      reader.stopSpeaking();
+      return sample(voiceFor(prefs.get('bib.lastLang') || 'es') || listVoices()[0]);
+    }
+    if (e.target.closest('[data-voicehelp]')) {
+      closeSoundPanel();
+      return showVoiceHelp();
+    }
     const chip = e.target.closest('[data-amb]');
     if (!chip) return;
     state.ambientMode = chip.dataset.amb;
@@ -1876,6 +1961,13 @@ function bindUI() {
     renderSoundPanel();
   });
   $('#soundPanel').addEventListener('input', (e) => {
+    const rate = e.target.closest('[data-rate]');
+    if (rate) {
+      setSpeechRate(rate.value / 100);
+      rate.closest('.sp-row').querySelector('[data-ratev]').textContent = `${(rate.value / 100).toFixed(2).replace('.', ',')}×`;
+      paintRange(rate);
+      return;
+    }
     const r = e.target.closest('[data-vol]');
     if (!r) return;
     sound.setVolume(r.dataset.vol, r.value / 100);
@@ -1893,6 +1985,14 @@ function bindUI() {
   $('#cloudBtn').addEventListener('click', cloudClick);
   $('#moreBtn').addEventListener('click', moreMenu);
   $('#goalBtn').addEventListener('click', showStats);
+  // Las voces del sistema llegan tarde: si el panel de sonido está abierto, se vuelve a dibujar.
+  onVoices(() => !$('#soundPanel').hidden && renderSoundPanel());
+  // La primera vez que se escucha con una voz robótica, se sugiere bajar una mejor.
+  $('#rListen').addEventListener('click', () => {
+    if (!reader.speaking || prefs.get('bib.voiceTip') || hasGoodVoice('es')) return;
+    prefs.set('bib.voiceTip', '1');
+    setTimeout(() => toast('Consejo: para una voz más natural, descarga una voz «Mejorada» o «Premium». Mira cómo en Sonido › Voces más naturales.', 8000), 1500);
+  });
   $('#backupInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';
