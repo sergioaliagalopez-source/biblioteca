@@ -804,10 +804,11 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 
 /* ---------- Lector: herramientas de arriba y papel ---------- */
 .reader-top .r-tools { justify-self: end; display: flex; gap: 8px; }
-#reader[data-paper="sepia"] .page .content canvas { filter: sepia(0.45) saturate(1.1) brightness(0.97); }
-#reader[data-paper="sepia"] .page:not(.endpaper) { background-color: #e8d4ac; }
+/* sepia: un velo cálido sobre la textura del papel; la página se funde con él (multiply) */
+#reader[data-paper="sepia"] .page:not(.endpaper) { background: linear-gradient(rgba(200, 140, 40, 0.25), rgba(200, 140, 40, 0.25)), var(--paperTex), #e8d4ac; }
 #reader[data-paper="night"] .page:not(.endpaper) { background: #1c1915; }
-#reader[data-paper="night"] .page .content canvas { mix-blend-mode: normal; filter: invert(0.88) hue-rotate(180deg) brightness(0.9) contrast(0.92); }
+/* el papel blanco de la página se vuelve negro y «screen» lo funde con el tono de noche: sin rectángulo */
+#reader[data-paper="night"] .page .content canvas { mix-blend-mode: screen; filter: invert(1) hue-rotate(180deg) brightness(0.8); }
 #reader[data-paper="night"] .reader-desk { filter: brightness(0.55); }
 
 /* Índice de capítulos */
@@ -1059,7 +1060,9 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 
 /* ---------- Hoja completa: sin el libro 3D, la página es la pantalla ---------- */
 #reader.flat { background: var(--paperTex), #f3ead6; }
-#reader.flat[data-paper="sepia"] { background: var(--paperTex), #e8d4ac; }
+/* el papel es uno solo, de borde a borde: la página no tiene fondo propio */
+#reader.flat .page:not(.endpaper) { background: transparent !important; }
+#reader.flat[data-paper="sepia"] { background: linear-gradient(rgba(200, 140, 40, 0.25), rgba(200, 140, 40, 0.25)), var(--paperTex), #e8d4ac; }
 #reader.flat[data-paper="night"] { background: #1c1915; }
 #reader.flat .reader-desk, #reader.flat .reader-glow, #reader.flat .board, #reader.flat .edges, #reader.flat .spine-groove,
 #reader.flat .book-shadow, #reader.flat .spine-face, #reader.flat .tail-edge, #reader.flat .cover,

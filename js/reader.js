@@ -193,7 +193,7 @@ export class Reader {
       this.cache.set(key, pr);
       return pr;
     }
-    pr = renderPage(this.pdf, p, this.pw, this.ph).catch((err) => {
+    pr = renderPage(this.pdf, p, this.pw, this.ph, undefined, { paper: true }).catch((err) => {
       // una página que falló no se guarda: la próxima vez se intenta de nuevo
       if (this.cache.get(key) === pr) this.cache.delete(key);
       if (err?.name !== 'RenderingCancelledException') console.warn('No se pudo dibujar la página', p, err);
@@ -1042,7 +1042,7 @@ export class Reader {
     if (where && this.isOpen && !this.bk.classList.contains('closed')) {
       const rw = parseFloat(this.bk.style.getPropertyValue('--rw')) || 16;
       // Cerca del lomo y apenas inclinada, como queda una cinta real sobre la hoja.
-      const x = where === 'right' ? this.rightX + this.pw * 0.07 : this.spineX - this.pw * 0.07 - rw;
+      const x = where === 'right' ? this.rightX + this.pw * 0.012 : this.spineX - this.pw * 0.012 - rw;
       this.ribbon.style.left = `${x}px`;
       this.ribbon.style.transform = `translateZ(3px) rotate(${where === 'right' ? -1.2 : 1.2}deg)`;
       this.ribbon.style.display = 'block';
