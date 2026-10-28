@@ -84,7 +84,9 @@ export async function quoteCard({ text, title, author, page, color = '#3b2a1e', 
   const cover = await loadImage(coverUrl);
   let tx = W / 2;
   if (cover) {
-    const ch = 130, cw = Math.min(110, ch * (cover.width / cover.height));
+    // la portada entra en 110 × 130 sin deformarse
+    const k = Math.min(110 / cover.width, 130 / cover.height);
+    const cw = cover.width * k, ch = cover.height * k;
     g.shadowColor = 'rgba(0,0,0,0.3)';
     g.shadowBlur = 12;
     g.drawImage(cover, px + 110, fy + 30, cw, ch);

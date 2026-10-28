@@ -41,9 +41,15 @@ export async function checkDevLink() {
   const m = location.hash.match(/^#dev=(.+)$/);
   if (!m) return null;
   history.replaceState(null, '', location.pathname + location.search);
-  const code = decodeURIComponent(m[1]).trim().toUpperCase();
+  let code;
+  try {
+    code = decodeURIComponent(m[1]).trim().toUpperCase();
+  } catch {
+    return 'Código de desarrollador incorrecto';
+  }
   if (code === 'OFF') {
     prefs.set('bib.dev', '0');
+    if (['localhost', '127.0.0.1'].includes(location.hostname)) return 'En esta PC el modo desarrollador está siempre activo';
     return 'Modo desarrollador desactivado';
   }
   if (!crypto?.subtle) return null;
@@ -97,6 +103,9 @@ export async function redeem(rawKey) {
   const key = rawKey.trim();
   if (key.length < 8) throw new Error('Ese código parece incompleto.');
   if (!PAYMENTS.storeId) throw new Error('Los pagos todavía no están configurados en esta versión.');
+  // ese código ya está activado en este dispositivo: no se gasta otra activación
+  const already = Object.entries(readOwned()).filter(([, r]) => r?.key === key).map(([id]) => id);
+  if (already.length) return already;
   const body = new URLSearchParams({ license_key: key, instance_name: `Biblioteca · ${navigator.platform || 'dispositivo'}` });
   let res;
   try {

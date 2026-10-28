@@ -32,7 +32,7 @@ function audio() {
     fxBus.gain.value = volume.fx;
     fxBus.connect(master);
   }
-  if (ctx.state === 'suspended') ctx.resume();
+  if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {});
   return ctx;
 }
 
@@ -79,6 +79,14 @@ function room() {
   return reverb;
 }
 
+const audioRunning = () => !!ctx && ctx.state === 'running';
+
+// El iPhone sólo deja reanudar el audio con un toque: tras una llamada o al volver a la app se reanuda
+// en el primer toque o tecla.
+for (const ev of ['pointerdown', 'touchend', 'keydown']) {
+  window.addEventListener(ev, () => ctx && ctx.state !== 'running' && ctx.state !== 'closed' && ctx.resume().catch(() => {}), { capture: true, passive: true });
+}
+
 const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
 
 function noiseLoop(out, type, filters, gain) {
@@ -121,7 +129,7 @@ function burst(out, { at, dur, type = 'white', filter = 'highpass', freq = 2000,
 
 // Programa eventos un poco por adelantado (para que el ritmo no tiemble aunque la página esté ocupada).
 function scheduler(tick) {
-  const id = setInterval(() => tick(audio().currentTime + 0.35), 40);
+  const id = setInterval(() => audioRunning() && tick(ctx.currentTime + 0.35), 40);
   return () => clearInterval(id);
 }
 
@@ -138,8 +146,15 @@ function indoorRain(out) {
   const body = noiseLoop(bed, 'brown', [{ type: 'lowpass', freq: 650 }], 0.34);
   const texture = noiseLoop(bed, 'pink', [{ type: 'bandpass', freq: 1000, q: 0.55 }, { type: 'lowpass', freq: 1700 }], 0.06);
   let alive = true;
-  const timers = [];
-  const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
+  const timers = new Set();
+  const later = (fn, ms) => {
+    const id = setTimeout(() => {
+      timers.delete(id);
+      // sin audio en marcha (llamada, app en segundo plano) no se crean sonidos que después sonarían todos juntos
+      if (alive) audioRunning() ? fn() : later(fn, ms);
+    }, ms);
+    timers.add(id);
+  };
   const gust = () => {
     const t = c.currentTime;
     bed.gain.cancelScheduledValues(t);
@@ -247,8 +262,10 @@ const GENERATORS = {
     const tick = () => {
       if (!alive) return;
       const c = audio();
-      burst(out, { at: c.currentTime, dur: 0.02 + Math.random() * 0.05, freq: 900 + Math.random() * 2500, peak: 0.03 + Math.random() * 0.16 });
-      if (Math.random() < 0.3) burst(out, { at: c.currentTime + 0.05, dur: 0.03, freq: 1800, peak: 0.06 });
+      if (audioRunning()) {
+        burst(out, { at: c.currentTime, dur: 0.02 + Math.random() * 0.05, freq: 900 + Math.random() * 2500, peak: 0.03 + Math.random() * 0.16 });
+        if (Math.random() < 0.3) burst(out, { at: c.currentTime + 0.05, dur: 0.03, freq: 1800, peak: 0.06 });
+      }
       timer = setTimeout(tick, 60 + Math.random() * 520);
     };
     tick();
@@ -426,7 +443,7 @@ const GENERATORS = {
     let crackleTimer;
     const crackle = () => {
       if (!alive) return;
-      burst(out, { at: c.currentTime, dur: 0.008, freq: 3000, peak: 0.02 + Math.random() * 0.04 });
+      if (audioRunning()) burst(out, { at: c.currentTime, dur: 0.008, freq: 3000, peak: 0.02 + Math.random() * 0.04 });
       crackleTimer = setTimeout(crackle, 40 + Math.random() * 400);
     };
     crackle();
@@ -435,6 +452,8 @@ const GENERATORS = {
       stopSched();
       clearTimeout(crackleTimer);
       hiss.stop(t);
+      send.gain.setTargetAtTime(0, t, 0.3);
+      setTimeout(() => send.disconnect(), 2500);
     };
   },
 
@@ -483,8 +502,15 @@ const GENERATORS = {
     echo.connect(fb).connect(echo);
     echo.connect(out);
     let alive = true;
-    const timers = [];
-    const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
+    const timers = new Set();
+    const later = (fn, ms) => {
+    const id = setTimeout(() => {
+      timers.delete(id);
+      // sin audio en marcha (llamada, app en segundo plano) no se crean sonidos que después sonarían todos juntos
+      if (alive) audioRunning() ? fn() : later(fn, ms);
+    }, ms);
+    timers.add(id);
+  };
     const gust = () => {
       const t = c.currentTime;
       windGain.gain.cancelScheduledValues(t);
@@ -559,8 +585,15 @@ const GENERATORS = {
     const murmur = noiseLoop(out, 'pink', [{ type: 'bandpass', freq: 420, q: 0.8 }], 0.012);
     const hall = room();
     let alive = true;
-    const timers = [];
-    const later = (fn, ms) => timers.push(setTimeout(() => alive && fn(), ms));
+    const timers = new Set();
+    const later = (fn, ms) => {
+    const id = setTimeout(() => {
+      timers.delete(id);
+      // sin audio en marcha (llamada, app en segundo plano) no se crean sonidos que después sonarían todos juntos
+      if (alive) audioRunning() ? fn() : later(fn, ms);
+    }, ms);
+    timers.add(id);
+  };
     // pasos: un golpe grave y un taconeo, con la reverberación de la sala
     const steps = () => {
       const n = 4 + Math.floor(Math.random() * 6);
@@ -693,6 +726,8 @@ const GENERATORS = {
     return (t) => {
       stopSched();
       stopRain(t);
+      send.gain.setTargetAtTime(0, t, 0.3);
+      setTimeout(() => send.disconnect(), 2500);
     };
   },
 };

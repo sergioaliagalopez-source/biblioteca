@@ -33,10 +33,32 @@ export async function readBackup(file) {
   const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   if (head.length < 12 || new TextDecoder().decode(head.slice(0, 8)) !== MAGIC) throw new Error('Ese archivo no es una copia de seguridad de Biblioteca.');
   const len = new DataView(head.buffer).getUint32(8);
-  const index = JSON.parse(await file.slice(12, 12 + len).text());
+  let index;
+  try {
+    index = JSON.parse(await file.slice(12, 12 + len).text());
+  } catch {
+    throw new Error('La copia de seguridad está incompleta o dañada.');
+  }
   const base = 12 + len;
-  const part = (r, type) => (r ? file.slice(base + r.at, base + r.at + r.size, r.type || type) : null);
-  index.books = (index.books || []).map(({ cover, pdf, ...b }) => ({ book: { ...b, coverBlob: part(cover, 'image/jpeg') }, pdf: part(pdf, 'application/pdf') }));
+  const part = (r, type) => (r && r.size > 0 && base + r.at + r.size <= file.size ? file.slice(base + r.at, base + r.at + r.size, r.type || type) : null);
+  // Lo que falte se completa con valores razonables; lo que no tiene identificador se descarta.
+  const str = (v, d = '') => (typeof v === 'string' ? v : d);
+  index.createdAt = Number.isFinite(index.createdAt) ? index.createdAt : file.lastModified || Date.now();
+  index.categories = (Array.isArray(index.categories) ? index.categories : []).filter((c) => c && typeof c.id === 'string' && c.id).map((c) => ({ ...c, name: str(c.name, 'Sin nombre') }));
+  index.books = (Array.isArray(index.books) ? index.books : [])
+    .filter((b) => b && typeof b.id === 'string' && b.id)
+    .map(({ cover, pdf, ...b }) => ({
+      book: {
+        ...b,
+        title: str(b.title, 'Sin título'),
+        author: str(b.author),
+        pageCount: Number.isFinite(b.pageCount) ? b.pageCount : 1,
+        addedAt: Number.isFinite(b.addedAt) ? b.addedAt : Date.now(),
+        highlights: Array.isArray(b.highlights) ? b.highlights.filter((h) => h && Array.isArray(h.rects)) : [],
+        coverBlob: part(cover, 'image/jpeg'),
+      },
+      pdf: part(pdf, 'application/pdf'),
+    }));
   return index;
 }
 

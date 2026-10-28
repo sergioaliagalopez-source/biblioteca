@@ -27,7 +27,7 @@ export class FolderStore {
     this.handle = handle;
     this.name = handle.name;
     Object.assign(this, { onSaving, onSaved, onError });
-    this.data = { version: 1, updatedAt: 0, books: [], categories: [] };
+    this.data = { version: 1, updatedAt: 0, books: [], categories: [], deleted: {} };
     this.covers = new Map();
     this.lastSeen = 0;
     this.pending = Promise.resolve();
@@ -71,7 +71,7 @@ export class FolderStore {
     const file = await this.readFile('', INDEX);
     if (file) {
       const parsed = JSON.parse(await file.text());
-      this.data = { version: 1, updatedAt: 0, books: [], categories: [], ...parsed };
+      this.data = { version: 1, updatedAt: 0, books: [], categories: [], deleted: {}, ...parsed };
       this.lastSeen = file.lastModified;
     }
     this.covers.clear();
@@ -95,13 +95,50 @@ export class FolderStore {
     this.saveTimer = setTimeout(() => this.flush(), 400);
   }
 
+  // Si otra PC guardó en la carpeta desde la última lectura, se suman sus cambios antes de escribir
+  // (si no, guardar acá borraría lo que se hizo allá). Gana la versión más reciente de cada libro;
+  // los borrados se recuerdan en `deleted` para que no vuelvan a aparecer.
+  async mergeRemote() {
+    const file = await this.readFile('', INDEX).catch(() => null);
+    if (!file || file.lastModified <= this.lastSeen + 1000) return;
+    let remote;
+    try {
+      remote = JSON.parse(await file.text());
+    } catch {
+      return;
+    }
+    const deleted = { ...(remote.deleted || {}), ...(this.data.deleted || {}) };
+    const byId = new Map(this.data.books.map((b) => [b.id, b]));
+    for (const rb of remote.books || []) {
+      const mine = byId.get(rb.id);
+      if (!mine) {
+        if ((deleted[rb.id] || 0) < (rb.updatedAt || 0)) byId.set(rb.id, rb);
+      } else if ((rb.updatedAt || 0) > (mine.updatedAt || 0)) byId.set(rb.id, rb);
+    }
+    for (const [id, at] of Object.entries(deleted)) if ((byId.get(id)?.updatedAt || 0) < at) byId.delete(id);
+    this.data.books = [...byId.values()];
+    const cats = new Map(this.data.categories.map((c) => [c.id, c]));
+    for (const rc of remote.categories || []) if (!cats.has(rc.id) && !deleted[rc.id]) cats.set(rc.id, rc);
+    this.data.categories = [...cats.values()].filter((c) => !deleted[c.id]);
+    this.data.deleted = deleted;
+    await Promise.all(
+      this.data.books.filter((b) => !this.covers.has(b.id)).map(async (b) => {
+        const f = await this.readFile('portadas', `${b.id}.jpg`).catch(() => null);
+        if (f) this.covers.set(b.id, f);
+      })
+    );
+    this.remoteMerged = true;
+  }
+
   flush() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    this.data.updatedAt = Date.now();
-    const json = new Blob([JSON.stringify(this.data, null, 2)], { type: 'application/json' });
     this.pending = this.pending
-      .then(() => this.writeFile('', INDEX, json))
+      .then(() => this.mergeRemote())
+      .then(() => {
+        this.data.updatedAt = Date.now();
+        return this.writeFile('', INDEX, new Blob([JSON.stringify(this.data, null, 2)], { type: 'application/json' }));
+      })
       .then(async (fh) => {
         this.lastSeen = (await fh.getFile()).lastModified;
         this.onSaved?.();
@@ -160,6 +197,7 @@ export class FolderStore {
 
   async del(store, id) {
     if (store === 'files') return this.track(this.removeFile('libros', `${id}.pdf`));
+    (this.data.deleted ??= {})[id] = Date.now();
     if (store === 'books') {
       this.data.books = this.data.books.filter((b) => b.id !== id);
       this.covers.delete(id);

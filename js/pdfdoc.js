@@ -153,7 +153,11 @@ export async function detectTwoUp(pdf) {
   const n = pdf.numPages;
   const picks = [...new Set(Array.from({ length: Math.min(10, n) }, (_, i) => Math.round(1 + ((i + 0.5) / Math.min(10, n)) * (n - 1))))];
   const found = [];
-  for (const i of picks) found.push(await gutterOf(await pdf.getPage(i)).catch(() => null));
+  for (const i of picks) {
+    const page = await pdf.getPage(i);
+    found.push(await gutterOf(page).catch(() => null));
+    page.cleanup();
+  }
   const hits = found.filter((g) => g != null).sort((a, b) => a - b);
   if (hits.length < Math.max(1, Math.ceil(picks.length * 0.6))) return false;
   return Math.round(hits[Math.floor(hits.length / 2)] * 1000) / 1000;
@@ -225,7 +229,7 @@ const pct = (arr, p) => {
 // Mide hasta 16 páginas y devuelve el encuadre { w, h, odd: [x, y, ancho, alto], even: [...] } o null.
 export async function frameOf(pdf, split) {
   const n = pdf.numPages;
-  const first = await pdf.getPage(1);
+  const first = await pdf.getPage(Math.max(1, Math.ceil(n / 2)));
   const v1 = first.getViewport({ scale: 1 });
   const W = v1.width, H = v1.height;
   const from = n > 3 ? 2 : 1;
@@ -239,6 +243,7 @@ export async function frameOf(pdf, split) {
     const parts = split ? [['odd', 0, W * split], ['even', W * split, W]] : [[i % 2 ? 'odd' : 'even', 0, W]];
     for (const [key, a, b] of parts) {
       const box = await contentBox(page, a, b).catch(() => null);
+      if (key === parts.at(-1)[0]) page.cleanup();
       // cajas casi vacías (páginas en blanco o con una sola línea) no sirven para medir
       if (box && box.x1 - box.x0 > (b - a) * 0.3 && box.y1 - box.y0 > H * 0.3) boxes[key].push(box);
     }
@@ -331,6 +336,24 @@ function framedPage(page, box, textRange) {
   };
 }
 
+// Página en blanco con el tamaño de la hoja (sin texto).
+function blankPage(page) {
+  return {
+    view: page.view,
+    getViewport: (o) => page.getViewport(o),
+    getTextContent: async () => ({ items: [], styles: {} }),
+    render: ({ canvasContext: ctx }) => {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.restore();
+      return { promise: Promise.resolve(), cancel() {} };
+    },
+    cleanup: () => {},
+  };
+}
+
 // El documento tal como se lee: con las hojas divididas (dos páginas por hoja) y/o con encuadre de libro.
 export function bookDoc(pdf, { split = false, frame = null } = {}) {
   if (!split && !frame) return pdf;
@@ -340,7 +363,11 @@ export function bookDoc(pdf, { split = false, frame = null } = {}) {
     async getPage(v) {
       const page = await pdf.getPage(split ? Math.ceil(v / 2) : v);
       const W = page.view[2] - page.view[0], H = page.view[3] - page.view[1];
-      const box = boxFor(v, split, frame, W, H);
+      const odd = frame && (Math.abs(W - frame.w) > 2 || Math.abs(H - frame.h) > 2);
+      // en un libro de dos páginas por hoja, una hoja vertical (la tapa) es una sola página: entera a la
+      // derecha y la izquierda en blanco, como el reverso de una tapa
+      if (split && W < H * 1.15) return v % 2 ? framedPage(page, [0, 0, W, H], null) : blankPage(page);
+      const box = odd ? (split ? (v % 2 ? [0, 0, W * split, H] : [W * split, 0, W * (1 - split), H]) : [0, 0, W, H]) : boxFor(v, split, frame, W, H);
       const range = split ? (v % 2 ? [0, W * split] : [W * split, W]) : null;
       return framedPage(page, box, range);
     },

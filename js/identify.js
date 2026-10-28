@@ -170,8 +170,10 @@ export async function fetchCover(urls) {
       const blob = await r.blob();
       if (!blob.type.startsWith('image/') || blob.size < 3000) continue;
       const bmp = await createImageBitmap(blob);
-      if (bmp.width < 80 || bmp.height < 100) continue;
-      return { blob, w: bmp.width, h: bmp.height };
+      const { width: w, height: h } = bmp;
+      bmp.close?.();
+      if (w < 80 || h < 100) continue;
+      return { blob, w, h };
     } catch {
       /* siguiente candidato */
     } finally {
@@ -211,6 +213,7 @@ export async function coverPalette(blob) {
   c.height = 36;
   const g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(bmp, 0, 0, 24, 36);
+  bmp.close?.();
   const d = g.getImageData(0, 0, 24, 36).data;
   let r = 0, gg = 0, b = 0, w = 0;
   for (let i = 0; i < d.length; i += 4) {

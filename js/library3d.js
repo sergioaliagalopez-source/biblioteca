@@ -116,7 +116,14 @@ export class Library3D {
     this.buildTheme(id);
     if (this.last) this.setBooks(...this.last);
     // Compila los sombreadores del fondo nuevo mientras la cortina está puesta (así no se traba al aparecer).
-    this.ready = this.renderer.compileAsync ? this.renderer.compileAsync(this.scene, this.camera).catch(() => {}) : Promise.resolve();
+    // los sombreadores se compilan de una vez detrás de la cortina (compileAsync falla en Safari
+    // si se cambia de fondo mientras todavía compila)
+    try {
+      this.renderer.compile(this.scene, this.camera);
+    } catch {
+      /* se compilan al dibujar */
+    }
+    this.ready = Promise.resolve();
   }
 
   disposeTheme() {
@@ -127,6 +134,7 @@ export class Library3D {
     const geos = new Set();
     this.room.traverse((o) => {
       if (o.isLight) o.dispose(); // libera el mapa de sombras
+      if (o.isInstancedMesh) o.dispose();
       if (o.geometry && o.geometry !== this.unitBox) geos.add(o.geometry);
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => mats.add(m));
     });
@@ -558,8 +566,11 @@ export class Library3D {
         const y = (i / 16) * 0.3;
         prof.push(new THREE.Vector2(0.012 + Math.pow(i / 16, 3.2) * 0.15, y));
       }
-      const horn = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), this.mat.brass);
-      horn.material.side = THREE.DoubleSide;
+      // material propio: cambiar el lado del bronce compartido afectaría a toda la sala
+      const hornMat = this.mat.brass.clone();
+      hornMat.side = THREE.DoubleSide;
+      this.dynamic.push(hornMat);
+      const horn = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), hornMat);
       horn.position.set(0.15, 0.11, -0.1);
       horn.rotation.set(0.55, 0, 0.25);
       horn.castShadow = true;
@@ -1116,12 +1127,16 @@ export class Library3D {
 
   loop(now = performance.now()) {
     requestAnimationFrame(this.loop);
-    const busy = this.tweens.length || this.flying || this.hovered || now - this.lastActive < 1500;
+    // un libro señalado cuenta mientras sale de la estantería; ya quieto, no hace falta ir a 60
+    const pulling = this.hovered && Math.abs(0.085 - (this.hovered.userData.pull || 0)) > 1e-3;
+    const busy = this.tweens.length || this.flying || pulling || now - this.lastActive < 1500;
     const budget = busy ? 1000 / 60 : 1000 / 30;
-    if (now - this.lastFrame < budget - 3) return;
+    // margen relativo: a 75 u 85 Hz no se salta un cuadro de cada dos
+    if (now - this.lastFrame < budget * 0.75) return;
     // Si los cuadros tardan bastante más de lo previsto, se baja la resolución (y se sube cuando sobra).
     const took = now - this.lastFrame;
     this.lastFrame = now;
+    if (this.paused || took >= 200) this.ratioTrial = null; // con la escena en pausa la prueba no vale
     if (!this.paused && this.started && took < 200 && !this.adaptOff) {
       this.slowAvg = this.slowAvg * 0.95 + (took / budget) * 0.05;
       const trial = this.ratioTrial;

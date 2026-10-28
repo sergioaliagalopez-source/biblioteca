@@ -16,6 +16,8 @@ import { quoteCard } from './quotecard.js';
 import { listVoices, voiceFor, setVoice, voiceLabel, speechRate, setSpeechRate, sample, onVoices, hasGoodVoice } from './voices.js';
 
 const $ = (s, r = document) => r.querySelector(s);
+const pagesLabel = (n) => `${n} ${n === 1 ? 'página' : 'páginas'}`;
+const safeColor = (c) => (/^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '#3b2a1e');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const DEFAULT_CATEGORIES = ['Novela', 'Clásicos', 'Historia', 'Filosofía', 'Negocios', 'Desarrollo personal', 'Ciencia'];
@@ -52,7 +54,8 @@ document.addEventListener('touchmove', (e) => e.touches.length > 1 && e.preventD
 
 // Safari dibuja el libro 3D del lector por encima de las ventanas: ahí se oculta mientras hay una abierta.
 const ua = navigator.userAgent;
-if (/AppleWebKit/.test(ua) && !/Chrome|Chromium|CriOS|Edg/.test(ua)) document.documentElement.classList.add('webkit');
+const ios = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+if (ios || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg/.test(ua))) document.documentElement.classList.add('webkit');
 
 async function boot() {
   await Promise.all([
@@ -119,6 +122,7 @@ async function boot() {
     if (!isUnlocked(themeById(state.theme))) chooseTheme('clasica');
   });
   registerServiceWorker();
+  window.addEventListener('bib-save-failed', () => toast('No pude guardar el último cambio. Si sigue pasando, cierra y vuelve a abrir la app.', 6000));
   // PDF.js se prepara en un rato libre, para que abrir el primer libro no espere.
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
   idle(() => loadPdfjs().catch(() => {}), { timeout: 6000 });
@@ -162,7 +166,14 @@ const cloud = { status: 'off', savedHandle: null };
 async function attachFolder(handle, { merge = false } = {}) {
   const store = new FolderStore(handle, {
     onSaving: () => updateCloud('saving'),
-    onSaved: () => updateCloud('saved'),
+    onSaved: () => {
+      updateCloud('saved');
+      // se sumaron cambios hechos en otra PC: la estantería se actualiza (al cerrar el libro, si hay uno abierto)
+      if (store.remoteMerged && !state.reading) {
+        store.remoteMerged = false;
+        reloadLibrary();
+      }
+    },
     onError: (err) => {
       console.error(err);
       updateCloud('error');
@@ -172,6 +183,7 @@ async function attachFolder(handle, { merge = false } = {}) {
   await store.load();
   if (merge) await store.mergeFrom(db.folder || local);
   db.useFolder(store);
+  prefs.set('bib.localDirty', '0');
   cloud.savedHandle = handle;
   await local.put('settings', { id: 'folder', handle }).catch(() => {});
   updateCloud('saved');
@@ -188,7 +200,7 @@ async function restoreFolder() {
       updateCloud('paused');
       return;
     }
-    await attachFolder(saved.handle);
+    await attachFolder(saved.handle, { merge: prefs.get('bib.localDirty') === '1' });
   } catch (err) {
     console.error(err);
     updateCloud('paused');
@@ -355,7 +367,7 @@ function renderTabs() {
     ...sortedCategories().map((c) => ({ id: c.id, name: c.name, n: counts[c.id] || 0 })),
   ];
   $('#tabs').innerHTML =
-    tabs.map((t) => `<button class="tab ${t.id === state.active ? 'active' : ''}" data-id="${t.id}">${esc(t.name)}<sup>${t.n || ''}</sup></button>`).join('') +
+    tabs.map((t) => `<button class="tab ${t.id === state.active ? 'active' : ''}" data-id="${esc(t.id)}">${esc(t.name)}<sup>${t.n || ''}</sup></button>`).join('') +
     `<button class="tab add" data-add title="Nueva categoría" aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
 }
 
@@ -389,7 +401,7 @@ async function renameCategory(id) {
 async function deleteCategory(id) {
   const c = state.categories.find((x) => x.id === id);
   const n = state.books.filter((b) => b.categoryId === id).length;
-  const ok = await confirmBox(`¿Eliminar «${c.name}»?`, n ? `Sus ${n} libro${n > 1 ? 's' : ''} seguirán en tu biblioteca, sin categoría.` : 'La categoría está vacía.', 'Eliminar');
+  const ok = await confirmBox(`¿Eliminar «${c.name}»?`, n ? (n === 1 ? 'Su libro seguirá en tu biblioteca, sin categoría.' : `Sus ${n} libros seguirán en tu biblioteca, sin categoría.`) : 'La categoría está vacía.', 'Eliminar');
   if (!ok) return;
   for (const b of state.books.filter((x) => x.categoryId === id)) {
     b.categoryId = '';
@@ -410,7 +422,7 @@ function showTooltip(id, x, y) {
     tip.classList.remove('show');
     return;
   }
-  const v = `${book.bookmark ?? ''}/${book.lastPage}/${book.finishedAt || ''}`;
+  const v = `${book.bookmark ?? ''}/${book.lastPage}/${book.finishedAt || ''}/${book.updatedAt || ''}`;
   if (tip.dataset.id !== id || tip.dataset.v !== v) {
     tip.dataset.id = id;
     tip.dataset.v = v;
@@ -420,9 +432,9 @@ function showTooltip(id, x, y) {
       ? 'Terminado'
       : book.bookmark
         ? `<svg width="10" height="14" viewBox="0 0 10 14"><path d="M0 0h10v14l-5-4-5 4z" fill="#8a2232"/></svg> Cinta en la página ${book.bookmark} de ${book.pageCount} · ${pct} %`
-        : (book.lastPage || 1) > 1 ? `Página ${book.lastPage} de ${book.pageCount} · ${pct} % leído` : `${book.pageCount} páginas · sin empezar`;
+        : (book.lastPage || 1) > 1 ? `Página ${book.lastPage} de ${book.pageCount} · ${pct} % leído` : `${pagesLabel(book.pageCount)} · sin empezar`;
     tip.innerHTML = `
-      <div class="thumb" style="${url ? `background-image:url('${url}')` : `background-color:${book.color}`}"></div>
+      <div class="thumb" style="${url ? `background-image:url('${url}')` : `background-color:${safeColor(book.color)}`}"></div>
       <div>
         <h4>${esc(book.title)}</h4>
         <div class="by">${esc(book.author || 'Autor desconocido')}${book.year ? ` · ${esc(book.year)}` : ''}</div>
@@ -513,6 +525,9 @@ async function deleteBook(id, skipConfirm = false) {
   await db.del('books', id);
   await db.del('files', id);
   state.books = state.books.filter((k) => k.id !== id);
+  const cover = state.coverUrls.get(id);
+  if (cover) URL.revokeObjectURL(cover.url);
+  state.coverUrls.delete(id);
   refreshShelf();
   toast('Libro retirado de la estantería');
 }
@@ -601,9 +616,9 @@ function renderSearch(query) {
       .map((b, i) => {
         const url = coverURL(b);
         const cat = categoryName(b.categoryId);
-        const where = b.finishedAt ? 'Terminado' : b.bookmark ? `Cinta en la pág. ${b.bookmark} · ${percentRead(b)} %` : (b.lastPage || 1) > 1 ? `Pág. ${b.lastPage} · ${percentRead(b)} %` : `${b.pageCount} páginas`;
+        const where = b.finishedAt ? 'Terminado' : b.bookmark ? `Cinta en la pág. ${b.bookmark} · ${percentRead(b)} %` : (b.lastPage || 1) > 1 ? `Pág. ${b.lastPage} · ${percentRead(b)} %` : pagesLabel(b.pageCount);
         return `<button class="search-item ${i === 0 ? 'sel' : ''}" data-i="${i}">
-          <span class="thumb" style="${url ? `background-image:url('${url}')` : `background-color:${b.color}`}"></span>
+          <span class="thumb" style="${url ? `background-image:url('${url}')` : `background-color:${safeColor(b.color)}`}"></span>
           <span class="info">
             <span class="t">${highlight(b.title, query)}</span>
             <span class="a">${highlight(b.author || 'Autor desconocido', query)}${cat ? ` · ${highlight(cat, query)}` : ''}</span>
@@ -666,12 +681,12 @@ function bindSearch() {
 function showHighlights(book) {
   const list = () => [...(book.highlights || [])].sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
   const item = (h) => `
-    <div class="hl-item" role="button" tabindex="0" data-id="${h.id}" data-page="${h.page}" title="Ir a la página ${h.page}">
+    <div class="hl-item" role="button" tabindex="0" data-id="${esc(h.id)}" data-page="${+h.page}" title="Ir a la página ${+h.page}">
       <span class="sw" style="background:${(HL_COLORS[h.color] || HL_COLORS.yellow).dot}"></span>
       <span class="body"><span class="pg">Página ${h.page}</span><q>${esc(h.text.length > 280 ? h.text.slice(0, 280) + '…' : h.text)}</q>${h.note ? `<span class="note">${esc(h.note)}</span>` : ''}</span>
-      <button class="x note-btn" data-note="${h.id}" title="${h.note ? 'Editar la nota' : 'Escribir una nota'}">${ICON.pencil}</button>
-      <button class="x note-btn" data-share="${h.id}" title="Crear una tarjeta con esta cita">${ICON.share}</button>
-      <button class="x" data-del="${h.id}" title="Quitar este resaltado">×</button>
+      <button class="x note-btn" data-note="${esc(h.id)}" title="${h.note ? 'Editar la nota' : 'Escribir una nota'}">${ICON.pencil}</button>
+      <button class="x note-btn" data-share="${esc(h.id)}" title="Crear una tarjeta con esta cita">${ICON.share}</button>
+      <button class="x" data-del="${esc(h.id)}" title="Quitar este resaltado">×</button>
     </div>`;
   const body = () =>
     list().length
@@ -711,6 +726,13 @@ function showHighlights(book) {
             close(null);
             reader.goToPage(+it.dataset.page);
           }
+        });
+        card.addEventListener('keydown', (e) => {
+          const it = e.target.closest?.('.hl-item');
+          if (!it || e.target !== it || (e.key !== 'Enter' && e.key !== ' ')) return;
+          e.preventDefault();
+          close(null);
+          reader.goToPage(+it.dataset.page);
         });
       },
     }
@@ -1075,7 +1097,7 @@ async function showData() {
       : 'Este navegador no garantiza guardar tus libros para siempre: haz una copia de vez en cuando.';
   modal(
     `<div class="ornament">❦</div><h2>Copia de seguridad</h2>
-     <p class="sub">Guarda en un solo archivo ${n === 1 ? 'tu libro' : `tus ${n} libros`} con sus cintas, resaltados y notas, tus compras y tus estadísticas. Ábrelo en otro dispositivo para tener todo igual.</p>
+     <p class="sub">Guarda en un solo archivo ${n === 0 ? 'tus libros' : n === 1 ? 'tu libro' : `tus ${n} libros`} con sus cintas, resaltados y notas, tus compras y tus estadísticas. Ábrelo en otro dispositivo para tener todo igual.</p>
      <div class="data-status ${safe ? 'ok' : 'warn'}">${safe ? ICON.check : ICON.lock}<span>${esc(status)}${used ? ` <em>${used}</em>` : ''}</span></div>
      <p class="data-last">${last ? `Última copia: ${new Date(last).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}` : 'Todavía no hiciste ninguna copia.'}</p>
      <div class="actions"><button class="btn-ghost" data-act="import">Restaurar desde un archivo…</button><span class="grow"></span>
@@ -1249,6 +1271,12 @@ async function openBook(id) {
 }
 
 function closeReader() {
+  if (trialPending) setTimeout(() => endTrial(trialPending), 1800);
+  if (pendingReload) setTimeout(() => location.reload(), 1800);
+  if (db.folder?.remoteMerged) {
+    db.folder.remoteMerged = false;
+    setTimeout(reloadLibrary, 1500);
+  }
   document.body.classList.remove('reading');
   lib.returnBook().then(() => {
     state.reading = null;
@@ -1421,7 +1449,7 @@ function bookDialog(draft, { mode, found, covers, pick }) {
       const renderCats = (sel) => {
         f('cat').innerHTML =
           `<option value="">Sin categoría</option>` +
-          sortedCategories().map((c) => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('') +
+          sortedCategories().map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('') +
           `<option value="__new">+ Nueva categoría…</option>`;
       };
       renderCats(draft.categoryId);
@@ -1439,9 +1467,15 @@ function bookDialog(draft, { mode, found, covers, pick }) {
         if (!t) return;
         const label = btn?.textContent;
         if (btn) btn.textContent = 'Buscando…';
-        const info = await identify({ override: { title: t, author: f('author').value.trim() }, pageCount: draft.pageCount });
-        const online = info.found && info.covers.length ? await fetchCover(info.covers) : null;
-        if (btn) btn.textContent = label;
+        let info, online;
+        try {
+          info = await identify({ override: { title: t, author: f('author').value.trim() }, pageCount: draft.pageCount });
+          online = info.found && info.covers.length ? await fetchCover(info.covers) : null;
+        } catch {
+          info = { found: false };
+        } finally {
+          if (btn) btn.textContent = label;
+        }
         if (!info.found) {
           toast('No encontré coincidencias en los catálogos');
           return false;
@@ -1475,11 +1509,15 @@ function bookDialog(draft, { mode, found, covers, pick }) {
           if (k === 'custom') return card.querySelector('[data-file]').click();
           if (k === 'pdf' && !covers.pdf && mode === 'edit') {
             chip.textContent = 'Cargando…';
-            const file = await db.get('files', draft.id);
-            if (file) {
-              const pdf = await openPdf(file.blob);
-              covers.pdf = (await renderCoverFromPdf(pdf)).blob;
-              pdf.destroy();
+            try {
+              const file = await db.get('files', draft.id);
+              if (file) {
+                const pdf = await openPdf(file.blob);
+                covers.pdf = (await renderCoverFromPdf(pdf)).blob;
+                pdf.destroy();
+              }
+            } catch {
+              toast('No pude leer la portada del PDF');
             }
             chip.textContent = 'Del PDF';
           }
@@ -1519,7 +1557,10 @@ function bookDialog(draft, { mode, found, covers, pick }) {
           out.ribbon = pal.ribbon;
           if (coverBlob) {
             const bmp = await createImageBitmap(coverBlob).catch(() => null);
-            if (bmp) out.aspect = bmp.width / bmp.height;
+            if (bmp) {
+              out.aspect = bmp.width / bmp.height;
+              bmp.close?.();
+            }
           }
           if (previewUrl) URL.revokeObjectURL(previewUrl);
           close(out);
@@ -1563,7 +1604,7 @@ function modal(html, { onMount, wide } = {}) {
       if (e.target === bd) close(null);
     });
     onMount?.(bd.firstElementChild, close);
-    bd.querySelector('input:not([type=file])')?.focus();
+    if (!matchMedia('(pointer: coarse)').matches) bd.querySelector('input:not([type=file])')?.focus();
   });
 }
 
@@ -1630,6 +1671,8 @@ function toast(text, ms = 2600) {
   }, ms);
 }
 
+let pendingReload = false;
+
 // Hace la app instalable y usable sin internet (sólo cuando se sirve por http/https).
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
@@ -1638,7 +1681,11 @@ function registerServiceWorker() {
   const hadController = !!navigator.serviceWorker.controller;
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloading || state.reading) return;
+    if (!hadController || reloading) return;
+    if (state.reading || document.querySelector('.modal-backdrop')) {
+      pendingReload = true;
+      return;
+    }
     reloading = true;
     location.reload();
   });
@@ -1727,6 +1774,12 @@ let switchingTheme = false;
 async function chooseTheme(id, { preview = false } = {}) {
   const t = themeById(id);
   closeThemes();
+  if (id === state.theme && !preview) {
+    // ya está puesto (por ejemplo, se compró durante la prueba): se guarda y la prueba termina
+    endPreview();
+    prefs.set('bib.theme', id);
+    return;
+  }
   if (id === state.theme || switchingTheme || state.reading) return;
   if (!isUnlocked(t) && !preview) return showPurchase(t);
   if (!preview) endPreview();
@@ -1865,24 +1918,34 @@ function showRestore() {
 
 // Prueba gratuita: 30 segundos en el fondo y después vuelve al que estabas usando.
 let previewTimer = null;
+let trialPending = null;
 let previewReturn = null;
 async function previewTheme(t) {
   previewReturn ??= state.theme;
   clearTimeout(previewTimer);
   await chooseTheme(t.id, { preview: true });
   toast(`Probando «${t.name}» por 30 segundos`, 3500);
-  previewTimer = setTimeout(() => {
-    const back = previewReturn;
-    previewReturn = null;
-    if (state.reading || state.theme !== t.id) return;
-    toast('Terminó la prueba. Puedes comprarlo desde «Fondos».', 4500);
-    chooseTheme(back);
-  }, 30000);
+  previewTimer = setTimeout(() => endTrial(t), 30000);
+}
+
+// Fin de la prueba gratuita: vuelve al fondo de antes (si hay un libro abierto, al cerrarlo).
+function endTrial(t) {
+  if (state.theme !== t.id || isUnlocked(t)) return endPreview();
+  if (state.reading) {
+    trialPending = t;
+    return;
+  }
+  const back = previewReturn;
+  previewReturn = null;
+  trialPending = null;
+  toast('Terminó la prueba. Puedes comprarlo desde «Fondos».', 4500);
+  chooseTheme(back || 'clasica');
 }
 
 function endPreview() {
   clearTimeout(previewTimer);
   previewReturn = null;
+  trialPending = null;
 }
 
 // ---------- Sonido ----------
@@ -2027,7 +2090,12 @@ function bindUI() {
     input.value = '';
   });
 
+  let suppressTabClick = false;
   $('#tabs').addEventListener('click', async (e) => {
+    if (suppressTabClick) {
+      suppressTabClick = false;
+      return;
+    }
     const t = e.target.closest('.tab');
     if (!t) return;
     if (t.hasAttribute('data-add')) {
@@ -2035,16 +2103,30 @@ function bindUI() {
       if (c) setActive(c.id);
     } else setActive(t.dataset.id);
   });
-  $('#tabs').addEventListener('contextmenu', (e) => {
-    const t = e.target.closest('.tab');
-    if (!t || !t.dataset.id || t.dataset.id === 'all' || t.dataset.id === 'done') return;
-    e.preventDefault();
+  const tabMenu = (t, x, y) => {
+    if (!t || !t.dataset.id || t.dataset.id === 'all' || t.dataset.id === 'done') return false;
     const id = t.dataset.id;
-    showMenu(e.clientX, e.clientY, [
+    showMenu(x, y, [
       { label: 'Renombrar…', action: () => renameCategory(id) },
       { label: 'Eliminar categoría', danger: true, action: () => deleteCategory(id) },
     ]);
+    return true;
+  };
+  $('#tabs').addEventListener('contextmenu', (e) => {
+    if (tabMenu(e.target.closest('.tab'), e.clientX, e.clientY)) e.preventDefault();
   });
+  let tabHold = null;
+  $('#tabs').addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const t = e.target.closest('.tab');
+    const r = t?.getBoundingClientRect();
+    clearTimeout(tabHold);
+    tabHold = setTimeout(() => {
+      if (tabMenu(t, r.left, r.bottom + 6)) suppressTabClick = true;
+    }, 550);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('#tabs').addEventListener(ev, () => clearTimeout(tabHold));
+  $('#tabs').addEventListener('scroll', () => clearTimeout(tabHold), { passive: true });
 
   $('#themeBtn').addEventListener('click', openThemes);
   $('#themes').addEventListener('click', (e) => {
@@ -2185,6 +2267,7 @@ function bindUI() {
     depth = 0;
     dz.classList.remove('show');
     if (state.reading) return toast('Cierra el libro para añadir otros');
+    if (document.querySelector('.modal-backdrop')) return toast('Termina lo que estás haciendo y vuelve a soltar el archivo');
     importFiles(e.dataTransfer.files);
   });
 }

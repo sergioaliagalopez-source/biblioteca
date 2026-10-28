@@ -184,6 +184,8 @@ export class Reader {
   // ---------- Páginas ----------
 
   getCanvas(p) {
+    // las guardas (0 y N+1) y el papel en blanco no son páginas del PDF
+    if (p == null || p < 1 || p > this.N) return Promise.resolve(null);
     const key = `${p}@${this.pw}x${this.ph}`;
     let pr = this.cache.get(key);
     if (pr) {
@@ -192,7 +194,9 @@ export class Reader {
       return pr;
     }
     pr = renderPage(this.pdf, p, this.pw, this.ph).catch((err) => {
-      console.warn('No se pudo dibujar la página', p, err);
+      // una página que falló no se guarda: la próxima vez se intenta de nuevo
+      if (this.cache.get(key) === pr) this.cache.delete(key);
+      if (err?.name !== 'RenderingCancelledException') console.warn('No se pudo dibujar la página', p, err);
       const c = document.createElement('canvas');
       c.width = c.height = 2;
       return c;
@@ -201,7 +205,11 @@ export class Reader {
     // Con zoom cada página pesa mucho más: se guardan menos (unos 40 millones de píxeles en total).
     const px = this.pw * this.ph * Math.min(window.devicePixelRatio || 1, 2) ** 2;
     const keep = clamp(Math.floor(4e7 / px), 6, 28);
-    while (this.cache.size > keep) this.cache.delete(this.cache.keys().next().value);
+    while (this.cache.size > keep) {
+      const k = this.cache.keys().next().value;
+      this.cache.get(k).then(freeCanvas, () => {});
+      this.cache.delete(k);
+    }
     return pr;
   }
 
@@ -325,7 +333,7 @@ export class Reader {
   }
 
   async setHighlightMode(on) {
-    if (!this.isOpen) return;
+    if (!this.isOpen || (on && (this.flat || this.busy))) return;
     this.hlMode = on;
     this.el.classList.toggle('hl-mode', on);
     $('#rHighlight').classList.toggle('active', on);
@@ -351,7 +359,7 @@ export class Reader {
     $('#selBar').hidden = true;
     if (!range || range.collapsed) return false;
     const rects = [...range.getClientRects()].filter((r) => r.width > 1 && r.height > 1);
-    const text = selectedText(this.bk, range);
+    const text = selectedText(this.bk, range); // para saber si hay algo; cada página guarda el suyo
     sel?.removeAllRanges();
     if (!rects.length || !text) return false;
     const color = prefs.get('bib.hlColor') || 'yellow';
@@ -369,7 +377,7 @@ export class Reader {
       // Volver a resaltar lo mismo reemplaza lo anterior en vez de apilar colores.
       const page = +layer.dataset.page;
       this.book.highlights = (this.book.highlights || []).filter((h) => h.page !== page || !overlaps(h.rects, merged));
-      this.book.highlights.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), page, color, rects: merged, text, createdAt: Date.now() });
+      this.book.highlights.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), page, color, rects: merged, text: selectedText(layer, range) || text, createdAt: Date.now() });
       made++;
     }
     if (made) this.highlightsChanged();
@@ -496,6 +504,7 @@ export class Reader {
     this.bk.classList.remove('no-anim');
     this.el.classList.add('visible');
     this.isOpen = true;
+    this.busy = true;
 
     const v = this.vis(this.s);
     if (this.flat) {
@@ -507,9 +516,13 @@ export class Reader {
       await wait(380);
       await this.openCover();
     }
+    this.busy = false;
     this.updateRibbon(false);
     this.prefetch();
     this.showUI();
+    // un libro de una sola hoja (o abierto ya en la última) también cuenta como terminado
+    if (this.s >= this.maxS) this.onFinish?.(this.book);
+    this.runPendingRelayout();
   }
 
   // La opacidad se anima en las caras y no en el contenedor: en Chrome, animar la opacidad
@@ -555,11 +568,7 @@ export class Reader {
       this.onClose?.();
       await wait(500);
       this.el.classList.remove('open');
-      this.pdf?.destroy();
-      this.pdf = null;
-      this.cache.clear();
-      this.isOpen = false;
-      this.closing = false;
+      this.release();
       return;
     }
     const v = this.vis(this.s);
@@ -590,9 +599,21 @@ export class Reader {
     this.el.classList.remove('open');
     [a, ...fades].forEach((x) => x.cancel());
     this.cover.style.display = 'none';
+    this.release();
+  }
+
+  // Libera el documento, las páginas dibujadas y el texto (al cerrar el libro).
+  release() {
     this.pdf?.destroy();
     this.pdf = null;
+    this.raw = null;
+    for (const pr of this.cache.values()) pr.then(freeCanvas, () => {});
     this.cache.clear();
+    this.textCache = new Map();
+    for (const h of [this.pageL, this.pageR, this.leafFront, this.leafBack, this.coverPage]) {
+      freeCanvas(h.querySelector('.content canvas'));
+      h._key = null;
+    }
     this.isOpen = false;
     this.closing = false;
   }
@@ -700,6 +721,7 @@ export class Reader {
     this.s = target;
     this.busy = false;
     this.afterMove();
+    this.runPendingRelayout();
   }
 
   // Hoja completa: la página nueva entra deslizándose un poco desde el lado hacia el que se avanza.
@@ -718,6 +740,7 @@ export class Reader {
     await anims[1].finished.catch(() => {});
     this.busy = false;
     this.afterMove();
+    this.runPendingRelayout();
   }
 
   flatEnter(animate) {
@@ -789,7 +812,7 @@ export class Reader {
     if (on) this.showFlatExit(5000);
     const tips = +prefs.get('bib.flatTips') || 0;
     if (on && tips < 3) prefs.set('bib.flatTips', String(tips + 1));
-    if (on && tips < 3) this.toast?.(matchMedia('(pointer: coarse)').matches ? 'Toca el medio de la pantalla para ver las opciones; los bordes pasan de hoja' : 'Esc o F para salir de la pantalla completa', 4000);
+    if (on && tips < 3) this.toast?.(matchMedia('(pointer: coarse)').matches ? 'Toca el medio de la pantalla para ver las opciones; los bordes pasan de hoja' : 'Tecla F (o mover el ratón y tocar «Salir») para volver al libro', 4000);
   }
 
   updateFlatButton() {
@@ -851,7 +874,11 @@ export class Reader {
           try {
             let dest = it.dest;
             if (typeof dest === 'string') dest = await pdf.getDestination(dest);
-            if (Array.isArray(dest) && dest[0] != null) page = typeof dest[0] === 'number' ? (pdf.toVirtual ? pdf.toVirtual(dest[0]) : dest[0]) + 1 : (await pdf.getPageIndex(dest[0])) + 1;
+            if (Array.isArray(dest) && dest[0] != null) {
+              page = typeof dest[0] === 'number' ? (pdf.toVirtual ? pdf.toVirtual(dest[0]) : dest[0]) + 1 : (await pdf.getPageIndex(dest[0])) + 1;
+              const left = typeof dest[2] === 'number' ? dest[2] : null;
+              if (pdf.split && left != null && this.book.sheet && left > this.book.sheet.w * pdf.split) page += 1;
+            }
           } catch {
             /* destino roto: el capítulo queda sin página */
           }
@@ -885,7 +912,8 @@ export class Reader {
 
   startFocus(minutes) {
     if (!this.isOpen) return;
-    this.focus = { start: Date.now(), end: minutes ? Date.now() + minutes * 60e3 : null, pages: new Set(this.realPages(this.s)), seconds: 0 };
+    const first = this.realPages(this.s);
+    this.focus = { start: Date.now(), end: minutes ? Date.now() + minutes * 60e3 : null, pages: new Set(first), base: first.length, seconds: 0 };
     this.el.classList.add('focus');
     this.tickFocus();
     clearInterval(this.focusT);
@@ -908,7 +936,7 @@ export class Reader {
     this.focus = null;
     clearInterval(this.focusT);
     this.el.classList.remove('focus');
-    this.onFocusEnd?.({ reason, seconds: f.seconds, pages: Math.max(0, f.pages.size - 1), minutes: Math.round((Date.now() - f.start) / 60e3) });
+    this.onFocusEnd?.({ reason, seconds: f.seconds, pages: Math.max(0, f.pages.size - f.base), minutes: Math.round((Date.now() - f.start) / 60e3) });
   }
 
   // ---------- Leer en voz alta ----------
@@ -956,20 +984,28 @@ export class Reader {
     for (const p of this.realPages(this.s)) text += ' ' + (await this.pageText(p).catch(() => ''));
     if (tok !== this.speakTok || !this.speaking) return;
     text = text.trim();
-    if (!text) return this.afterSpoken(tok);
+    if (!text) {
+      this.emptySpreads = (this.emptySpreads || 0) + 1;
+      if (this.emptySpreads >= 2) {
+        this.stopSpeaking();
+        return this.toast?.('Estas páginas no tienen texto para leer en voz alta (parecen escaneadas).', 4500);
+      }
+      return this.afterSpoken(tok);
+    }
+    this.emptySpreads = 0;
     // El idioma elegido para este libro (Sonido › Idioma del libro) o, si no, el que se detecta en el texto.
     const lang = ['es', 'en'].includes(this.book.speechLang) ? this.book.speechLang : this.speechLang(text);
     prefs.set('bib.lastLang', lang);
     const voice = voiceFor(lang);
     // Frases cortas: los teléfonos cortan los textos muy largos.
-    const chunks = text.match(/[^.!?;:]+[.!?;:]*\s*/g)?.flatMap((c) => (c.length > 220 ? c.match(/.{1,200}(\s|$)/g) : [c])) || [text];
+    const chunks = text.match(/[^.!?;:]+[.!?;:]*\s*/g)?.flatMap((c) => (c.length > 220 ? c.match(/.{1,200}(\s|$)/g) || c.match(/.{1,200}/g) : [c])) || [text];
     chunks.forEach((c, i) => {
       const u = new SpeechSynthesisUtterance(c.trim());
       u.lang = voice?.lang || (lang === 'en' ? 'en-US' : 'es-ES');
       if (voice) u.voice = voice;
       u.rate = speechRate();
       u.onstart = () => (this.lastActivity = Date.now());
-      if (i === chunks.length - 1) u.onend = () => this.afterSpoken(tok);
+      if (i === chunks.length - 1) u.onend = u.onerror = () => this.afterSpoken(tok);
       speechSynthesis.speak(u);
     });
   }
@@ -1100,6 +1136,10 @@ export class Reader {
 
   async relayout() {
     if (!this.isOpen) return;
+    if (this.busy || this.closing) {
+      this.relayoutPending = true;
+      return;
+    }
     const keepPage = this.realPages(this.s)[0] ?? 1;
     this.layout();
     this.s = clamp(this.spreadOf(keepPage), this.minS, this.maxS);
@@ -1115,6 +1155,12 @@ export class Reader {
 
   // Cambia el zoom sin perder el lugar: desde «entera» va al principio de la página, centrado;
   // entre otros niveles mantiene en el centro lo que estabas mirando.
+  runPendingRelayout() {
+    if (!this.relayoutPending) return;
+    this.relayoutPending = false;
+    this.relayout();
+  }
+
   setZoom(i) {
     if (this.busy) return;
     const next = clamp(i, 0, (this.zoomLevels || [1]).length - 1);
@@ -1276,6 +1322,14 @@ export class Reader {
 
     let wheelLock = 0;
     this.stage.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        if (this.isOpen && Math.abs(e.deltaY) > 4 && Date.now() > (this.pinchLock || 0)) {
+          this.pinchLock = Date.now() + 350;
+          this.setZoom(this.zoomIdx + (e.deltaY < 0 ? 1 : -1));
+        }
+        return;
+      }
       if (!this.isOpen || this.zoomIdx > 0) return;
       e.preventDefault();
       const now = Date.now();
@@ -1413,6 +1467,14 @@ export class Reader {
       this.goToPage(parseInt(scrub.value, 10));
       scrub.blur();
     });
+  }
+}
+
+// Vacía un lienzo: el navegador libera su memoria enseguida (importante en el iPhone).
+function freeCanvas(c) {
+  if (c && c.width) {
+    c.width = 0;
+    c.height = 0;
   }
 }
 

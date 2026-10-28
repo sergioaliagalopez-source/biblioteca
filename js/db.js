@@ -17,7 +17,8 @@ function open() {
       db.persistent = false;
       resolve(null);
     };
-    const timer = setTimeout(() => fail(new Error('IndexedDB no respondió')), 5000);
+    // Safari en el iPhone puede tardar varios segundos en abrir la base al arrancar en frío
+    const timer = setTimeout(() => fail(new Error('IndexedDB no respondió')), 10000);
     try {
       const req = indexedDB.open(DB_NAME, VERSION);
       req.onupgradeneeded = () => {
@@ -28,7 +29,14 @@ function open() {
       };
       req.onsuccess = () => {
         clearTimeout(timer);
-        resolve(req.result);
+        const idb = req.result;
+        // el iPhone corta la conexión cuando la app pasa a segundo plano: se vuelve a abrir al usarla
+        idb.onclose = () => (dbPromise = null);
+        idb.onversionchange = () => {
+          idb.close();
+          dbPromise = null;
+        };
+        resolve(idb);
       };
       req.onerror = () => {
         clearTimeout(timer);
@@ -42,11 +50,19 @@ function open() {
   return dbPromise;
 }
 
-async function run(store, mode, fn, fallback) {
+async function run(store, mode, fn, fallback, retry = true) {
   const idb = await open();
   if (!idb) return fallback(memory[store]);
+  let tx;
+  try {
+    tx = idb.transaction(store, mode);
+  } catch (err) {
+    // conexión cerrada (InvalidStateError): una vez más con una conexión nueva
+    if (!retry) throw err;
+    dbPromise = null;
+    return run(store, mode, fn, fallback, false);
+  }
   return new Promise((resolve, reject) => {
-    const tx = idb.transaction(store, mode);
     const req = fn(tx.objectStore(store));
     tx.oncomplete = () => resolve(req ? req.result : undefined);
     tx.onerror = () => reject(tx.error);
@@ -91,6 +107,19 @@ export const local = {
 let folder = null;
 const target = (store) => (folder && store !== 'settings' ? folder : local);
 
+// Cambios guardados sólo en este navegador (sin la carpeta conectada): al reconectarla se suman.
+const markLocal = (store) => !folder && store !== 'settings' && prefs.set('bib.localDirty', '1');
+
+// Un guardado que falla no debe romper lo que se estaba haciendo; se avisa una sola vez.
+let warned = false;
+function saveFailed(err) {
+  console.error('No se pudo guardar', err);
+  if (!warned) {
+    warned = true;
+    window.dispatchEvent(new CustomEvent('bib-save-failed'));
+  }
+}
+
 export const db = {
   persistent: true,
   useFolder(f) {
@@ -104,9 +133,13 @@ export const db = {
   put: (store, value) => {
     // La fecha decide qué copia gana al unir la biblioteca de esta PC con la de la carpeta.
     if (store === 'books') value.updatedAt = Date.now();
-    return target(store).put(store, value);
+    markLocal(store);
+    return target(store).put(store, value).catch(saveFailed);
   },
-  del: (store, id) => target(store).del(store, id),
+  del: (store, id) => {
+    markLocal(store);
+    return target(store).del(store, id).catch(saveFailed);
+  },
 };
 
 // Preferencias pequeñas (pestaña activa, ambiente, modo de página). Si el navegador

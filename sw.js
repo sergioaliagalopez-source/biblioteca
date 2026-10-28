@@ -2,7 +2,7 @@
 // Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
 // viejos con nuevos); sin conexión usa la copia guardada.
 // Al publicar una versión nueva, sube el número de VERSION.
-const VERSION = 'biblioteca-v27';
+const VERSION = 'biblioteca-v28';
 
 const SHELL = [
   './',
@@ -74,7 +74,9 @@ self.addEventListener('fetch', (event) => {
   // La página y los archivos de la app: primero la red (revalidando), y si no hay conexión, lo guardado.
   if (url.origin === self.location.origin) {
     const nav = req.mode === 'navigate';
-    const key = nav ? 'index.html' : req;
+    // sólo la página de la app se guarda como «index.html» (no el Biblioteca.html de un solo archivo)
+    const isApp = nav && (url.pathname.endsWith('/') || url.pathname.endsWith('/index.html'));
+    const key = isApp ? 'index.html' : nav ? url.origin + url.pathname : req;
     // Una petición de navegación no se puede copiar con opciones: se arma una nueva con su URL.
     const netReq = nav ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : new Request(req, { cache: 'no-cache' });
     event.respondWith(
