@@ -501,6 +501,7 @@ export class Reader {
     if (this.flat) {
       await this.paintSpread();
       this.flatEnter(true);
+      this.showFlatExit(5000);
     } else {
       await Promise.all([this.paintSpread(), this.paint(this.coverPage, this.double ? v.left : null)]);
       await wait(380);
@@ -785,9 +786,10 @@ export class Reader {
     this.bk.classList.remove('no-anim');
     this.flatEnter(on);
     this.showUI();
+    if (on) this.showFlatExit(5000);
     const tips = +prefs.get('bib.flatTips') || 0;
     if (on && tips < 3) prefs.set('bib.flatTips', String(tips + 1));
-    if (on && tips < 3) this.toast?.(matchMedia('(pointer: coarse)').matches ? 'Toca el centro de la página para salir de la pantalla completa' : 'Esc o F para salir de la pantalla completa', 3500);
+    if (on && tips < 3) this.toast?.(matchMedia('(pointer: coarse)').matches ? 'Toca el medio de la pantalla para ver las opciones; los bordes pasan de hoja' : 'Esc o F para salir de la pantalla completa', 4000);
   }
 
   updateFlatButton() {
@@ -1163,13 +1165,21 @@ export class Reader {
   }
 
   // En hoja completa no se muestran las barras: sólo, por un momento, el botón para salir.
-  showFlatExit(force = false) {
+  showFlatExit(ms = 4000) {
     this.el.classList.add('ui-hidden');
-    if (!force && Date.now() - (this.flatExitAt || 0) < 400) return;
-    const btn = $('#flatExit');
-    btn.classList.add('show');
+    const bar = $('#flatExit');
+    bar.classList.add('show');
     clearTimeout(this.flatExitT);
-    this.flatExitT = setTimeout(() => !btn.matches(':hover') && btn.classList.remove('show'), 2600);
+    // con el ratón encima no se esconde; con el dedo no se mira :hover (el iPhone lo deja «pegado» tras tocar)
+    this.flatExitT = setTimeout(() => (this.lastPointer !== 'mouse' || !bar.matches(':hover')) && bar.classList.remove('show'), ms);
+  }
+
+  toggleFlatExit() {
+    const bar = $('#flatExit');
+    if (bar.classList.contains('show')) {
+      clearTimeout(this.flatExitT);
+      bar.classList.remove('show');
+    } else this.showFlatExit();
   }
 
   hideUI() {
@@ -1206,15 +1216,24 @@ export class Reader {
       // El clic que cierra una selección no debe abrir el menú de un resaltado.
       if (Date.now() - (this.justHighlighted || 0) > 300) this.hitHighlight(e, holder);
     };
+    // Hoja completa: los bordes de la pantalla pasan de hoja y el resto muestra u oculta la barrita para salir.
+    const flatTap = (e) => {
+      if (this.swiped) return true;
+      const k = e.clientX / innerWidth;
+      if (k < 0.22) this.prev();
+      else if (k > 0.78) this.next();
+      else this.toggleFlatExit();
+      return true;
+    };
     this.pageL.addEventListener('click', (e) => {
       if (this.hlMode) return hlClick(e, this.pageL);
+      if (this.flat) return flatTap(e);
       if (!this.swiped) this.prev();
     });
     this.pageR.addEventListener('click', (e) => {
       if (this.hlMode) return hlClick(e, this.pageR);
       if (this.swiped) return;
-      // hoja completa con una página: el tercio izquierdo vuelve, el derecho avanza y el centro muestra «salir»
-      if (this.flat && !this.double && e.offsetX > this.pw / 3 && e.offsetX < (this.pw * 2) / 3) return this.showFlatExit(true);
+      if (this.flat) return flatTap(e);
       // En modo una página, el tercio izquierdo vuelve atrás.
       if (!this.double && e.offsetX < this.pw / 3) this.prev();
       else this.next();
@@ -1271,7 +1290,7 @@ export class Reader {
       this.lastActivity = Date.now();
       if (!this.flat) return this.showUI();
       // con el ratón, moverlo muestra un momento el botón para salir
-      if (e.pointerType === 'mouse' && Math.hypot(e.movementX || 0, e.movementY || 0) > 2) this.showFlatExit();
+      if (e.pointerType === 'mouse' && Math.hypot(e.movementX || 0, e.movementY || 0) > 2) this.showFlatExit(2600);
     });
     window.addEventListener('resize', () => {
       clearTimeout(this.resizeT);
@@ -1284,8 +1303,11 @@ export class Reader {
     $('#rFlat').addEventListener('click', () => this.setFlat(!this.flat));
     $('#flatExit').addEventListener('click', (e) => {
       e.stopPropagation();
+      const act = e.target.closest('[data-flat]')?.dataset.flat;
+      if (!act) return;
       $('#flatExit').classList.remove('show');
-      this.setFlat(false);
+      if (act === 'exit') this.setFlat(false);
+      else this.close();
     });
     // si se sale de la pantalla completa del navegador (Esc), la hoja completa sigue: sólo se reacomoda
     document.addEventListener('fullscreenchange', () => this.isOpen && this.relayout());
