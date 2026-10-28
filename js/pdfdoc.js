@@ -28,9 +28,11 @@ export async function openPdf(blob) {
 }
 
 // Renderiza la página n para que quepa en una caja de boxW x boxH píxeles CSS.
-// Con `paper`, el color de papel propio del PDF (crema, gris de escaneo…) se lleva a blanco: así cada página
-// toma el papel que eligió quien lee (día, sepia o noche) y no queda un rectángulo de otro tono.
-export async function renderPage(pdf, n, boxW, boxH, dpr = Math.min(window.devicePixelRatio || 1, 2), { paper = false } = {}) {
+// Con `paper`, la página sale sin papel: el tono propio del PDF (crema, gris de escaneo…) se lleva a blanco
+// y el blanco se vuelve transparente, así detrás se ve siempre el papel que eligió quien lee (día, sepia o
+// noche), también mientras la hoja se mueve. `paper` puede ser un objeto compartido por todo el libro: guarda
+// el tono del papel para las páginas donde no se distingue (una lámina a página completa).
+export async function renderPage(pdf, n, boxW, boxH, dpr = Math.min(window.devicePixelRatio || 1, 2), { paper = null } = {}) {
   const page = await pdf.getPage(n);
   const base = page.getViewport({ scale: 1 });
   const scale = Math.min(boxW / base.width, boxH / base.height) * dpr;
@@ -38,28 +40,26 @@ export async function renderPage(pdf, n, boxW, boxH, dpr = Math.min(window.devic
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.floor(vp.width));
   c.height = Math.max(1, Math.floor(vp.height));
-  const ctx = c.getContext('2d', { alpha: false });
+  const ctx = c.getContext('2d', { alpha: !!paper });
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, c.width, c.height);
   await page.render({ canvasContext: ctx, viewport: vp }).promise;
   page.cleanup();
-  if (paper) neutralizePaper(ctx, c.width, c.height);
+  if (paper) liftPaper(ctx, c.width, c.height, paper === true ? {} : paper);
   return c;
 }
 
-// Busca el tono que más se repite en la página: si es claro, parejo y ocupa buena parte (el papel del PDF),
-// divide toda la página por ese tono para que el papel quede blanco y el texto conserve su color.
-// Las márgenes blancas que agrega el encuadre siguen blancas; las ilustraciones no tienen un tono dominante.
-function neutralizePaper(ctx, W, H) {
-  if (W < 8 || H < 8) return;
-  const img = ctx.getImageData(0, 0, W, H);
-  const d = img.data;
+// Tono del papel de la página: el que más se repite, si es claro, parejo y ocupa buena parte. Las márgenes
+// blancas que agrega el encuadre no cuentan; una ilustración no tiene un tono dominante (devuelve null).
+function paperTone(d, W, H) {
   const step = Math.max(1, Math.round(Math.sqrt((W * H) / 4000)));
   const bins = new Map();
   let total = 0;
   for (let y = step >> 1; y < H; y += step) {
     for (let x = step >> 1; x < W; x += step) {
       const i = (y * W + x) * 4;
+      total++;
+      if (d[i] >= 250 && d[i + 1] >= 250 && d[i + 2] >= 250) continue;
       const key = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
       const bin = bins.get(key);
       if (bin) {
@@ -68,22 +68,41 @@ function neutralizePaper(ctx, W, H) {
         bin.g += d[i + 1];
         bin.b += d[i + 2];
       } else bins.set(key, { n: 1, r: d[i], g: d[i + 1], b: d[i + 2] });
-      total++;
     }
   }
-  // el tono dominante que no sea blanco puro (el blanco ya es papel neutro)
   let best = null;
-  for (const bin of bins.values()) if (bin.r / bin.n < 250 || bin.g / bin.n < 250 || bin.b / bin.n < 250) if (!best || bin.n > best.n) best = bin;
-  if (!best || best.n < total * 0.25) return;
-  const med = [best.r / best.n, best.g / best.n, best.b / best.n];
-  const lum = 0.3 * med[0] + 0.59 * med[1] + 0.11 * med[2];
-  // oscuro o de color fuerte (una tapa, una lámina): no se toca
-  if (lum < 170 || Math.max(...med) - Math.min(...med) > 70) return;
-  const k = med.map((v) => 255 / Math.max(1, v));
+  for (const bin of bins.values()) if (!best || bin.n > best.n) best = bin;
+  if (!best || best.n < total * 0.25) return null;
+  const tone = [best.r / best.n, best.g / best.n, best.b / best.n];
+  const lum = 0.3 * tone[0] + 0.59 * tone[1] + 0.11 * tone[2];
+  // oscuro o de color fuerte (una tapa, una lámina): no es papel
+  if (lum < 170 || Math.max(...tone) - Math.min(...tone) > 70) return null;
+  return tone;
+}
+
+// Lleva el papel a blanco (dividiendo por su tono) y el blanco a transparente: la tinta queda con su color
+// y su opacidad, de modo que sobre blanco se ve igual que el original y sobre otro papel se funde con él.
+function liftPaper(ctx, W, H, book) {
+  if (W < 8 || H < 8) return;
+  const img = ctx.getImageData(0, 0, W, H);
+  const d = img.data;
+  const tone = paperTone(d, W, H) || book.tone || null;
+  if (tone && !book.tone) book.tone = tone;
+  const k = tone ? tone.map((v) => 255 / Math.max(1, v)) : [1, 1, 1];
   for (let i = 0; i < d.length; i += 4) {
-    d[i] = Math.min(255, d[i] * k[0]);
-    d[i + 1] = Math.min(255, d[i + 1] * k[1]);
-    d[i + 2] = Math.min(255, d[i + 2] * k[2]);
+    const r = Math.min(255, d[i] * k[0]);
+    const g = Math.min(255, d[i + 1] * k[1]);
+    const b = Math.min(255, d[i + 2] * k[2]);
+    const a = 255 - Math.min(r, g, b);
+    if (a <= 0) {
+      d[i + 3] = 0;
+      continue;
+    }
+    const q = 255 / a;
+    d[i] = 255 - (255 - r) * q;
+    d[i + 1] = 255 - (255 - g) * q;
+    d[i + 2] = 255 - (255 - b) * q;
+    d[i + 3] = a;
   }
   ctx.putImageData(img, 0, 0);
 }

@@ -44,6 +44,7 @@ export class Reader {
     this.ribbonBody = $('#ribbon .body');
     this.tail = $('#ribbonTail');
     this.cache = new Map();
+    this.paperState = {};
     this.zoomIdx = 0;
     this.mode = prefs.get('bib.mode') || 'auto';
     this.isOpen = false;
@@ -193,7 +194,7 @@ export class Reader {
       this.cache.set(key, pr);
       return pr;
     }
-    pr = renderPage(this.pdf, p, this.pw, this.ph, undefined, { paper: true }).catch((err) => {
+    pr = renderPage(this.pdf, p, this.pw, this.ph, undefined, { paper: this.paperState }).catch((err) => {
       // una página que falló no se guarda: la próxima vez se intenta de nuevo
       if (this.cache.get(key) === pr) this.cache.delete(key);
       if (err?.name !== 'RenderingCancelledException') console.warn('No se pudo dibujar la página', p, err);
@@ -474,6 +475,7 @@ export class Reader {
       this.onSave?.(book);
     }
     this.raw = raw;
+    this.paperState = {}; // tono del papel de este PDF, igual para todas sus páginas
     this.useDoc();
     this.N = this.pdf.numPages;
     this.aspect = this.flatAspect() || book.pageAspect || book.aspect || 0.66;

@@ -515,7 +515,8 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 #pageR { left: var(--rightX); cursor: pointer; }
 #pageL { cursor: pointer; }
 .page .content { position: absolute; inset: 0; }
-.page canvas { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
+/* la página llega sin papel (transparente): detrás se ve el papel elegido */
+.page canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
 .page .gutter, .page .cast, .page .shade { position: absolute; inset: 0; pointer-events: none; }
 .page.as-left .gutter {
   background:
@@ -804,11 +805,14 @@ body[data-theme="mansion"] .hint { color: rgba(244, 236, 219, 0.75); }
 
 /* ---------- Lector: herramientas de arriba y papel ---------- */
 .reader-top .r-tools { justify-self: end; display: flex; gap: 8px; }
-/* sepia: un velo cálido sobre la textura del papel; la página se funde con él (multiply) */
+/* sepia: un velo cálido sobre la textura del papel */
 #reader[data-paper="sepia"] .page:not(.endpaper) { background: linear-gradient(rgba(200, 140, 40, 0.25), rgba(200, 140, 40, 0.25)), var(--paperTex), #e8d4ac; }
 #reader[data-paper="night"] .page:not(.endpaper) { background: #1c1915; }
-/* el papel blanco de la página se vuelve negro y «screen» lo funde con el tono de noche: sin rectángulo */
-#reader[data-paper="night"] .page .content canvas { mix-blend-mode: screen; filter: invert(1) hue-rotate(180deg) brightness(0.8); }
+/* el canto de las hojas (los bordes apilados) del mismo papel que la página */
+#reader[data-paper="sepia"] .edges { background: repeating-linear-gradient(to right, #e2cc9f 0 1px, #bba37a 1px 2px); }
+#reader[data-paper="night"] .edges { background: repeating-linear-gradient(to right, #2a2620 0 1px, #15130f 1px 2px); }
+/* noche: la tinta (sobre fondo transparente) se invierte a claro; el papel oscuro se ve detrás */
+#reader[data-paper="night"] .page .content canvas { filter: invert(1) hue-rotate(180deg) brightness(0.8); }
 #reader[data-paper="night"] .reader-desk { filter: brightness(0.55); }
 
 /* Índice de capítulos */
