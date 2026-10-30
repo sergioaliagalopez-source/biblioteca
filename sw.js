@@ -2,7 +2,7 @@
 // Con conexión siempre pide la versión más nueva de cada archivo (así nunca se mezclan archivos
 // viejos con nuevos); sin conexión usa la copia guardada.
 // Al publicar una versión nueva, sube el número de VERSION.
-const VERSION = 'biblioteca-v30';
+const VERSION = 'biblioteca-v31';
 
 const SHELL = [
   './',
@@ -31,6 +31,17 @@ const SHELL = [
   'js/dictionary.js',
   'js/quotecard.js',
   'js/voices.js',
+  'js/epub.js',
+  'js/tour.js',
+  'js/textmode.js',
+  'js/ocr.js',
+  'js/i18n.js',
+  'js/i18n-en.js',
+  'vendor/fonts/fonts.css',
+  'vendor/fonts/ebgaramond-normal-latin.woff2',
+  'vendor/fonts/ebgaramond-italic-latin.woff2',
+  'vendor/fonts/ebgaramond-normal-latin-ext.woff2',
+  'vendor/fonts/ebgaramond-italic-latin-ext.woff2',
   'vendor/three.module.js',
   'vendor/RoomEnvironment.js',
   'vendor/pdf.min.mjs',

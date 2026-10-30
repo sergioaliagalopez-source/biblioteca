@@ -1,6 +1,7 @@
 // Tarjeta de cita: convierte un resaltado en una imagen elegante (1080 × 1350, formato de redes)
 // con la tela del libro de fondo, la cita en un papel color crema, el título, el autor y la portada.
 import { shade } from './textures.js';
+import { t } from './i18n.js';
 
 const SERIF = '"Cormorant Garamond", "EB Garamond", Georgia, serif';
 const W = 1080, H = 1350;
@@ -99,7 +100,7 @@ export async function quoteCard({ text, title, author, page, color = '#3b2a1e', 
   g.fillText(t, tx, fy + 75);
   g.fillStyle = '#6b5333';
   g.font = `italic 500 32px ${SERIF}`;
-  g.fillText([author, page ? `página ${page}` : ''].filter(Boolean).join(' · '), tx, fy + 125);
+  g.fillText([author, page ? t('página {}', page) : ''].filter(Boolean).join(' · '), tx, fy + 125);
   // firma de la app
   g.fillStyle = 'rgba(244,236,219,0.85)';
   g.strokeStyle = 'rgba(244,236,219,0.85)';

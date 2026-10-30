@@ -4,8 +4,9 @@
 // Chrome configurado para bloquear datos de sitios), se usa memoria y `db.persistent` es false.
 
 const DB_NAME = 'biblioteca-old-money';
-const VERSION = 2;
-const STORES = ['books', 'files', 'categories', 'settings'];
+const VERSION = 3;
+// ocr: el texto reconocido de las páginas escaneadas (una fila por página, «idLibro:página»)
+const STORES = ['books', 'files', 'categories', 'settings', 'ocr'];
 let dbPromise = null;
 const memory = Object.fromEntries(STORES.map((s) => [s, new Map()]));
 
@@ -100,15 +101,23 @@ export const local = {
     return run(store, 'readwrite', (s) => s.put(packed), (m) => void m.set(value.id, value));
   },
   del: (store, id) => run(store, 'readwrite', (s) => s.delete(id), (m) => void m.delete(id)),
+  // filas cuyo id empieza con `prefix` (p. ej. todas las páginas de un libro)
+  byPrefix: (store, prefix) =>
+    run(store, 'readonly', (s) => s.getAll(IDBKeyRange.bound(prefix, prefix + '￿')), (m) => [...m.values()].filter((v) => String(v.id).startsWith(prefix))),
+  delPrefix: (store, prefix) =>
+    run(store, 'readwrite', (s) => s.delete(IDBKeyRange.bound(prefix, prefix + '￿')), (m) => {
+      for (const k of [...m.keys()]) if (String(k).startsWith(prefix)) m.delete(k);
+    }),
 };
 
 // Libros, archivos y categorías van a la carpeta conectada (OneDrive) si la hay;
 // los ajustes de esta PC (como qué carpeta usar) siempre quedan en el navegador.
 let folder = null;
-const target = (store) => (folder && store !== 'settings' ? folder : local);
+// El texto reconocido (OCR) queda en este dispositivo: es grande y se puede volver a generar.
+const target = (store) => (folder && store !== 'settings' && store !== 'ocr' ? folder : local);
 
 // Cambios guardados sólo en este navegador (sin la carpeta conectada): al reconectarla se suman.
-const markLocal = (store) => !folder && store !== 'settings' && prefs.set('bib.localDirty', '1');
+const markLocal = (store) => !folder && store !== 'settings' && store !== 'ocr' && prefs.set('bib.localDirty', '1');
 
 // Un guardado que falla no debe romper lo que se estaba haciendo; se avisa una sola vez.
 let warned = false;

@@ -1,0 +1,29 @@
+/* Páginas legales: mismo papel y tipografía que la app */
+:root {
+  --ink: #2a1d12;
+  --muted: #6b5333;
+  --gold: #a8843f;
+  --paper: #f3ead6;
+  --line: rgba(107, 83, 51, 0.22);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.62 "EB Garamond", Georgia, serif;
+}
+main { max-width: 760px; margin: 0 auto; padding: 48px 20px 80px; }
+header { border-bottom: 1px solid var(--line); margin-bottom: 28px; padding-bottom: 18px; }
+.brand { font: 600 15px/1 "Cormorant Garamond", Georgia, serif; letter-spacing: 0.32em; color: var(--muted); text-decoration: none; }
+h1 { font: 600 40px/1.1 "Cormorant Garamond", Georgia, serif; margin: 14px 0 6px; }
+h2 { font: 600 25px/1.2 "Cormorant Garamond", Georgia, serif; margin: 34px 0 6px; }
+.date { color: var(--muted); font-style: italic; margin: 0; }
+.lang { display: flex; gap: 14px; margin-top: 14px; }
+.lang a, nav a { color: var(--gold); }
+nav { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 15px; }
+section + section { margin-top: 64px; padding-top: 30px; border-top: 1px solid var(--line); }
+ul { padding-left: 22px; }
+li + li { margin-top: 4px; }
+a { color: var(--gold); }

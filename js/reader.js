@@ -1,6 +1,9 @@
 // Lector: un libro de tapa dura en CSS 3D, con hojas que pasan, guardas marmoladas
 // y una cinta de seda que marca dónde dejaste de leer.
-import { openPdf, renderPage, pdfUtil, detectTwoUp, bookDoc, remapBook, frameOf, remapFrame, pageAspectOf, readingFrame, boxFor } from './pdfdoc.js';
+import { openEpub } from './epub.js';
+import { TextMode } from './textmode.js';
+import { loadOcr, withOcr, isScanned } from './ocr.js';
+import { openPdf, renderPage, detectTwoUp, bookDoc, remapBook, frameOf, remapFrame, pageAspectOf, readingFrame, boxFor } from './pdfdoc.js';
 import { prefs } from './db.js';
 import { sound } from './sound.js';
 import { voiceFor, speechRate } from './voices.js';
@@ -28,8 +31,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
 export class Reader {
-  constructor({ onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish, onFocus, onFocusEnd, onShare, onDefine }) {
-    Object.assign(this, { onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish, onFocus, onFocusEnd, onShare, onDefine });
+  constructor({ onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish, onFocus, onFocusEnd, onShare, onDefine, onScanned }) {
+    Object.assign(this, { onClose, onSave, onEdit, onAmbient, onHighlights, onToc, onNote, onFinish, onFocus, onFocusEnd, onShare, onDefine, onScanned });
     this.el = $('#reader');
     this.stage = $('#stage');
     this.bk = $('#book3d');
@@ -294,7 +297,7 @@ export class Reader {
     let count = 0;
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
-      const tx = pdfUtil.transform(vp.transform, it.transform);
+      const tx = mul(vp.transform, it.transform);
       const fontH = Math.hypot(tx[2], tx[3]);
       if (fontH < 1) continue;
       const angle = Math.atan2(tx[1], tx[0]);
@@ -448,7 +451,7 @@ export class Reader {
   async open(book, blob, coverUrl) {
     this.book = book;
     this.coverUrl = coverUrl;
-    const raw = await openPdf(blob);
+    const raw = book.format === 'epub' ? await openEpub(blob) : await openPdf(blob);
     // Libros que todavía no se revisaron: ¿cada hoja trae dos páginas? Si es así, se dividen y se pasan
     // la página, la cinta y los resaltados guardados a la nueva numeración.
     let changed = false;
@@ -475,6 +478,8 @@ export class Reader {
       this.onSave?.(book);
     }
     this.raw = raw;
+    // texto reconocido (OCR) de las páginas escaneadas, si ya se hizo
+    this.ocr = book.format === 'epub' ? new Map() : await loadOcr(book.id);
     this.paperState = {}; // tono del papel de este PDF, igual para todas sus páginas
     this.useDoc();
     this.N = this.pdf.numPages;
@@ -525,6 +530,25 @@ export class Reader {
     // un libro de una sola hoja (o abierto ya en la última) también cuenta como terminado
     if (this.s >= this.maxS) this.onFinish?.(this.book);
     this.runPendingRelayout();
+    // ¿libro escaneado? (se revisa una vez por libro) Se ofrece reconocer el texto.
+    if (book.format !== 'epub' && !this.ocr.size && book.scanned === undefined) {
+      isScanned(raw)
+        .then((s) => {
+          book.scanned = s;
+          this.onSave?.(book);
+          if (s && this.book === book) this.onScanned?.(book);
+        })
+        .catch(() => {});
+    }
+  }
+
+  // Llegó texto reconocido (OCR) para el libro abierto: se usa enseguida.
+  applyOcr(bookId, pages) {
+    if (!this.isOpen || this.book?.id !== bookId || this.book.format === 'epub') return;
+    this.ocr = new Map(pages);
+    this.useDoc();
+    this.textCache = new Map();
+    if (this.hlMode) this.buildTextLayers();
   }
 
   // La opacidad se anima en las caras y no en el contenedor: en Chrome, animar la opacidad
@@ -606,6 +630,7 @@ export class Reader {
 
   // Libera el documento, las páginas dibujadas y el texto (al cerrar el libro).
   release() {
+    this.textMode?.close({ silent: true });
     this.pdf?.destroy();
     this.pdf = null;
     this.raw = null;
@@ -756,7 +781,7 @@ export class Reader {
     const b = this.book;
     const frame = b.noFrame ? null : b.frame;
     this.readFrame = this.flat && frame ? readingFrame(frame) : null;
-    this.pdf = bookDoc(this.raw, { split: b.split, frame: this.readFrame || frame });
+    this.pdf = bookDoc(b.format === 'epub' ? this.raw : withOcr(this.raw, this.ocr), { split: b.split, frame: this.readFrame || frame });
     this.N = this.pdf.numPages;
   }
 
@@ -896,10 +921,38 @@ export class Reader {
   }
 
   // Papel: de día, sepia (más cálido) o de noche (letras claras sobre fondo oscuro).
+  // ---------- Modo texto ----------
+
+  openText() {
+    if (!this.isOpen || this.busy || this.closing || this.focus) return;
+    if (this.speaking) this.stopSpeaking();
+    if (this.hlMode) this.setHighlightMode(false);
+    this.textMode ??= new TextMode({
+      onClose: (p) => {
+        this.lastActivity = Date.now();
+        if (this.isOpen && p !== this.position().page) this.go(this.spreadOf(clamp(p, 1, this.N)));
+      },
+      onProgress: (p) => {
+        this.lastActivity = Date.now();
+        if (!this.book) return;
+        this.book.lastPage = p;
+        clearTimeout(this.saveT);
+        this.saveT = setTimeout(() => this.flushSave(), 900);
+        if (p >= this.N) this.onFinish?.(this.book);
+      },
+      onDefine: (w) => this.onDefine?.(w),
+      onPaper: () => this.setPaper({ day: 'sepia', sepia: 'night', night: 'day' }[this.paper]),
+      toast: (t) => this.toast?.(t),
+    });
+    const lang = (this.pdf.book?.language || this.book.lang || '').slice(0, 2) || (navigator.language || 'es').slice(0, 2);
+    this.textMode.open({ doc: this.pdf, book: this.book, page: this.position().page, paper: this.paper, lang });
+  }
+
   setPaper(mode) {
     this.paper = ['day', 'sepia', 'night'].includes(mode) ? mode : 'day';
     prefs.set('bib.paper', this.paper);
     this.el.dataset.paper = this.paper;
+    this.textMode?.setPaper(this.paper);
     const btn = $('#rPaper');
     if (btn) {
       const label = { day: 'Día', sepia: 'Sepia', night: 'Noche' }[this.paper];
@@ -1238,7 +1291,7 @@ export class Reader {
   bind() {
     const typing = () => /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '') && document.activeElement.type !== 'range';
     document.addEventListener('keydown', (e) => {
-      if (!this.isOpen || this.closing || document.querySelector('.modal-backdrop')) return;
+      if (!this.isOpen || this.closing || document.querySelector('.modal-backdrop') || this.textMode?.isOpen) return;
       if (typing()) return;
       const k = e.key;
       if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') this.next();
@@ -1251,6 +1304,7 @@ export class Reader {
       else if (k === 'Escape' && this.flat) this.setFlat(false);
       else if (k === 'Escape' && !this.focus) this.close();
       else if (k === 'f' || k === 'F') this.setFlat(!this.flat);
+      else if (k === 't' || k === 'T') this.openText();
       else if (k === '+' || k === '=') this.setZoom(this.zoomIdx + 1);
       else if (k === '-') this.setZoom(this.zoomIdx - 1);
       else return;
@@ -1357,6 +1411,7 @@ export class Reader {
     $('#rInfo').addEventListener('click', () => this.onEdit?.(this.book));
     $('#rToc').addEventListener('click', () => this.onToc?.());
     $('#rFlat').addEventListener('click', () => this.setFlat(!this.flat));
+    $('#rText').addEventListener('click', () => this.openText());
     $('#flatExit').addEventListener('click', (e) => {
       e.stopPropagation();
       const act = e.target.closest('[data-flat]')?.dataset.flat;
@@ -1471,6 +1526,9 @@ export class Reader {
     });
   }
 }
+
+// Producto de dos matrices de transformación [a, b, c, d, e, f] (como Util.transform de PDF.js).
+const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
 
 // Vacía un lienzo: el navegador libera su memoria enseguida (importante en el iPhone).
 function freeCanvas(c) {

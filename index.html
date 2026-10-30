@@ -16,6 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/fonts/fonts.css">
   <link rel="stylesheet" href="css/styles.css">
   <script type="importmap">
   {
@@ -54,14 +55,14 @@
       <button class="icon-btn" id="moreBtn" title="Estadísticas, copia de seguridad y compras" aria-label="Más opciones">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
-      <button class="btn-gold" id="addBook">Añadir PDF</button>
+      <button class="btn-gold" id="addBook">Añadir libro</button>
     </div>
   </header>
 
   <div id="empty">
     <div class="ornament">❦</div>
     <p id="emptyText">Tu biblioteca espera su primer libro.</p>
-    <button class="btn-gold" id="emptyAdd">Elegir un PDF</button>
+    <button class="btn-gold" id="emptyAdd">Elegir un PDF o EPUB</button>
     <small>o arrastra el archivo a cualquier parte de la ventana</small>
   </div>
 
@@ -97,6 +98,7 @@
       <nav class="theme-cols" id="themeCols" role="tablist" aria-label="Colecciones de fondos"></nav>
       <p class="tcol-intro" id="themeColIntro"></p>
       <div class="theme-cards" id="themeCards"></div>
+      <p class="legal-links"><a href="legal/terms.html" target="_blank" rel="noopener">Términos de uso</a> · <a href="legal/privacy.html" target="_blank" rel="noopener">Privacidad</a> · <a href="legal/disclaimer.html" target="_blank" rel="noopener">Avisos</a></p>
     </section>
   </div>
 
@@ -125,6 +127,9 @@
         </button>
         <button class="r-btn text" id="rFlat" title="Leer con la hoja a pantalla completa (F)">
           <svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span>Pantalla completa</span>
+        </button>
+        <button class="r-btn text" id="rText" title="Modo texto: la letra del tamaño que quieras (T)">
+          <svg viewBox="0 0 24 24"><path d="M3 19l5-14 5 14M5 14h6M14 19l3.5-9 3.5 9M15.3 16h4.4"/></svg><span>Texto</span>
         </button>
         <button class="r-btn text" id="rToc" title="Índice de capítulos e ir a una página">
           <svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.5M4.5 12h.5M4.5 18h.5"/></svg><span>Índice</span>
@@ -234,7 +239,7 @@
   <div id="dropzone"><div><div class="ornament">❦</div>Suelta aquí tus libros en PDF</div></div>
   <div id="modal-root"></div>
   <div id="toasts" role="status" aria-live="polite"></div>
-  <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+  <input type="file" id="fileInput" accept="application/pdf,.pdf,application/epub+zip,.epub" multiple hidden>
   <input type="file" id="backupInput" hidden>
 
   <script>

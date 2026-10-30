@@ -4,6 +4,10 @@ import { clamp } from './textures.js';
 import { folderSupported, pickFolder, hasPermission, FolderStore } from './cloud.js';
 import { Library3D } from './library3d.js';
 import { Reader, HL_COLORS } from './reader.js';
+import { LANG, LOCALE, t, setLang, startTranslation } from './i18n.js';
+import { runTour } from './tour.js';
+import { runOcr, deleteOcr } from './ocr.js';
+import { openEpub, readEpub, epubFrame, EPUB_PAGE } from './epub.js';
 import { openPdf, renderCoverFromPdf, guessTitleFromText, pageAspects, loadPdfjs, detectTwoUp, remapBook, frameOf, remapFrame, pageAspectOf } from './pdfdoc.js';
 import { identify, fetchCover, suggestCategory, coverPalette, fallbackPalette } from './identify.js';
 import { sound } from './sound.js';
@@ -58,6 +62,7 @@ const ios = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxT
 if (ios || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg/.test(ua))) document.documentElement.classList.add('webkit');
 
 async function boot() {
+  startTranslation();
   await Promise.all([
     document.fonts.load('600 40px "Cormorant Garamond"'),
     document.fonts.load('italic 500 30px "Cormorant Garamond"'),
@@ -84,6 +89,7 @@ async function boot() {
     onFocusEnd: showFocusSummary,
     onShare: shareQuote,
     onDefine: showDefinition,
+    onScanned: offerOcr,
   });
   reader.toast = toast;
 
@@ -122,6 +128,7 @@ async function boot() {
     if (!isUnlocked(themeById(state.theme))) chooseTheme('clasica');
   });
   registerServiceWorker();
+  welcome();
   window.addEventListener('bib-save-failed', () => toast('No pude guardar el último cambio. Si sigue pasando, cierra y vuelve a abrir la app.', 6000));
   // PDF.js se prepara en un rato libre, para que abrir el primer libro no espere.
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
@@ -143,7 +150,7 @@ async function loadLibrary() {
   const seeded = db.folder ? db.folder.data.seeded : prefs.get('bib.seeded') && db.persistent;
   if (!state.categories.length && !seeded) {
     for (const [i, name] of DEFAULT_CATEGORIES.entries()) {
-      const c = { id: uid() + i, name, order: i };
+      const c = { id: uid() + i, name: t(name), order: i };
       await db.put('categories', c);
       state.categories.push(c);
     }
@@ -152,6 +159,57 @@ async function loadLibrary() {
   }
   state.books = await db.all('books');
   if (state.active !== 'all' && state.active !== 'done' && !state.categories.some((c) => c.id === state.active)) state.active = 'all';
+}
+
+// ---------- Primera vez ----------
+
+// Libros de muestra (dominio público), uno por idioma.
+const SAMPLES = {
+  es: { file: 'samples/lazarillo.epub', name: 'Lazarillo de Tormes.epub', category: 'Clásicos' },
+  en: { file: 'samples/happy-prince.epub', name: 'The Happy Prince.epub', category: 'Clásicos' },
+};
+const sampleLang = () => LANG;
+
+async function addSample(lang = sampleLang()) {
+  const s = SAMPLES[lang];
+  const res = await fetch(s.file);
+  if (!res.ok) throw new Error('sin muestra');
+  const file = new File([await res.blob()], s.name, { type: 'application/epub+zip' });
+  const cat = state.categories.find((c) => c.name === s.category || c.name === t(s.category));
+  const book = await importEpub(file, { sample: { categoryId: cat?.id ?? null, extra: { sample: lang } } });
+  refreshShelf();
+  return book;
+}
+
+// La primera vez: un clásico en la estantería y un recorrido corto por la pantalla.
+async function welcome() {
+  if (prefs.get('bib.welcomed')) return;
+  // quien ya tenía libros no necesita la bienvenida
+  if (state.books.length) return prefs.set('bib.welcomed', '1');
+  await new Promise((r) => {
+    const check = () => ($('#loader').classList.contains('done') ? r() : setTimeout(check, 300));
+    check();
+  });
+  try {
+    await addSample();
+  } catch (err) {
+    console.warn('No se pudo agregar el libro de muestra', err);
+  }
+  prefs.set('bib.welcomed', '1');
+  await new Promise((r) => setTimeout(r, 900));
+  if (state.reading || document.querySelector('.modal-backdrop')) return;
+  await showTour();
+}
+
+function showTour() {
+  const sample = state.books.find((b) => b.sample);
+  return runTour([
+    { el: null, title: 'Bienvenido a tu biblioteca', text: sample ? `Te dejamos un clásico en la estantería: «${sample.title}». Tócalo para abrirlo y pasar sus hojas como en un libro de verdad.` : 'Aquí vas a guardar y leer tus libros, como en una biblioteca de verdad.' },
+    { el: '#addBook', title: 'Añade tus libros', text: 'Elige archivos PDF o EPUB, o arrástralos a la ventana. La app busca la portada y los datos del libro.' },
+    { el: '#tabs', title: 'Ordénalos a tu gusto', text: 'Cada estante es una categoría. Mantén apretada una pestaña (o haz clic derecho) para renombrarla o crear otra.' },
+    { el: '#themeBtn', title: 'Cambia el ambiente', text: 'Elige dónde leer hoy: hay cuatro fondos gratis y otros para coleccionar. Cada uno con su propio sonido.' },
+    { el: '#goalBtn', title: 'Tu meta de lectura', text: 'El anillo se completa con los minutos que lees cada día. En el menú ☰ están tus estadísticas y la copia de seguridad.' },
+  ]);
 }
 
 async function reloadLibrary() {
@@ -491,6 +549,7 @@ function bookMenu(id, x, y) {
     { label: 'Abrir', action: () => openBook(id) },
     { label: 'Editar detalles…', action: () => editBook(id) },
     { label: b.finishedAt ? 'Marcar como no terminado' : 'Marcar como terminado', action: () => toggleFinished(id) },
+    ...(b.format !== 'epub' ? [{ label: ocrJob?.book.id === id ? 'Reconociendo el texto…' : b.ocrDone ? 'Reconocer el texto otra vez' : 'Reconocer el texto (OCR)', action: () => startOcr(b) }] : []),
     { sep: true },
     { header: 'Mover a' },
     { label: 'Sin categoría', checked: !b.categoryId, action: () => moveBook(id, '') },
@@ -522,8 +581,10 @@ async function deleteBook(id, skipConfirm = false) {
   const b = state.books.find((k) => k.id === id);
   if (!b) return;
   if (!skipConfirm && !(await confirmBox(`¿Quitar «${b.title}»?`, 'Se borrará de esta biblioteca junto con su cinta. Tu archivo PDF original no se toca.', 'Quitar'))) return;
+  if (ocrJob?.book.id === id) ocrJob.ctl.abort();
   await db.del('books', id);
   await db.del('files', id);
+  deleteOcr(id);
   state.books = state.books.filter((k) => k.id !== id);
   const cover = state.coverUrls.get(id);
   if (cover) URL.revokeObjectURL(cover.url);
@@ -826,7 +887,7 @@ async function editNote(h) {
 // Todos los resaltados y notas del libro en un archivo de texto.
 function exportHighlights(book) {
   const list = [...(book.highlights || [])].sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);
-  const lines = [`${book.title}${book.author ? ` — ${book.author}` : ''}`, `Resaltados y notas · ${new Date().toLocaleDateString('es')}`, ''];
+  const lines = [`${book.title}${book.author ? ` — ${book.author}` : ''}`, `Resaltados y notas · ${new Date().toLocaleDateString(LOCALE)}`, ''];
   for (const h of list) {
     lines.push(`Página ${h.page}`, `«${h.text}»`);
     if (h.note) lines.push(`Nota: ${h.note}`);
@@ -1026,9 +1087,9 @@ async function showDefinition(word) {
 function showStats() {
   const s = stats.summary(state.books);
   const max = Math.max(600, ...s.last.map((x) => x.sec));
-  const initials = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+  const initials = LANG === 'es' ? ['D', 'L', 'M', 'M', 'J', 'V', 'S'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   const bars = s.last
-    .map((x) => `<div class="st-bar ${x.sec >= 60 ? 'on' : ''}" title="${x.day.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}: ${duration(x.sec)}"><i style="height:${Math.max(x.sec ? 4 : 0, Math.round((x.sec / max) * 100))}%"></i><span>${initials[x.day.getDay()]}</span></div>`)
+    .map((x) => `<div class="st-bar ${x.sec >= 60 ? 'on' : ''}" title="${x.day.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' })}: ${duration(x.sec)}"><i style="height:${Math.max(x.sec ? 4 : 0, Math.round((x.sec / max) * 100))}%"></i><span>${initials[x.day.getDay()]}</span></div>`)
     .join('');
   const reading = state.books
     .filter((b) => !b.finishedAt && (b.lastPage || 1) > 1)
@@ -1099,7 +1160,7 @@ async function showData() {
     `<div class="ornament">❦</div><h2>Copia de seguridad</h2>
      <p class="sub">Guarda en un solo archivo ${n === 0 ? 'tus libros' : n === 1 ? 'tu libro' : `tus ${n} libros`} con sus cintas, resaltados y notas, tus compras y tus estadísticas. Ábrelo en otro dispositivo para tener todo igual.</p>
      <div class="data-status ${safe ? 'ok' : 'warn'}">${safe ? ICON.check : ICON.lock}<span>${esc(status)}${used ? ` <em>${used}</em>` : ''}</span></div>
-     <p class="data-last">${last ? `Última copia: ${new Date(last).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}` : 'Todavía no hiciste ninguna copia.'}</p>
+     <p class="data-last">${last ? `Última copia: ${new Date(last).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' })}` : 'Todavía no hiciste ninguna copia.'}</p>
      <div class="actions"><button class="btn-ghost" data-act="import">Restaurar desde un archivo…</button><span class="grow"></span>
        <button class="btn-dark" data-act="export" ${n ? '' : 'disabled'}>Crear copia</button></div>`,
     {
@@ -1163,7 +1224,7 @@ async function importBackup(file) {
     return toast(err.message || 'No pude leer ese archivo.', 5000);
   }
   const n = data.books.length;
-  const when = new Date(data.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' });
+  const when = new Date(data.createdAt).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' });
   const ok = await confirmBox(
     '¿Restaurar esta copia?',
     `Es del ${when} y tiene ${n} libro${n === 1 ? '' : 's'}. Se suma a tu biblioteca sin borrar nada; si un libro está en los dos lados, queda la versión más reciente.`,
@@ -1222,13 +1283,99 @@ async function importBackup(file) {
   }
 }
 
+async function addSampleFromMenu() {
+  const lang = sampleLang();
+  const have = state.books.find((b) => b.sample === lang);
+  if (have) return toast(`«${have.title}» ya está en tu estantería`);
+  const work = working('Agregando el libro de muestra…');
+  try {
+    const book = await addSample(lang);
+    work.close();
+    toast(`«${book.title}» ya está en tu estantería`);
+  } catch {
+    work.close();
+    toast('No pude agregar el libro de muestra. Revisa la conexión.');
+  }
+}
+
 function moreMenu(e) {
   const r = e.currentTarget.getBoundingClientRect();
   showMenu(r.right - 230, r.bottom + 6, [
     { label: 'Estadísticas de lectura', action: showStats },
     { label: 'Copia de seguridad…', action: showData },
     { label: 'Restaurar compras…', action: showRestore },
+    { label: 'Libro de muestra', action: addSampleFromMenu },
+    { label: 'Ver el recorrido de nuevo', action: showTour },
+    { label: LANG === 'es' ? 'Language: English' : 'Idioma: Español', action: () => setLang(LANG === 'es' ? 'en' : 'es') },
+    { label: 'Términos y privacidad', action: () => window.open('legal/terms.html', '_blank', 'noopener') },
   ]);
+}
+
+// ---------- Reconocer texto (OCR) ----------
+// Un libro por vez, en segundo plano: se puede seguir leyendo (o hacer otra cosa) mientras tanto.
+
+let ocrJob = null;
+
+async function offerOcr(book) {
+  if (book.ocrAsked || ocrJob) return;
+  book.ocrAsked = true;
+  db.put('books', book);
+  const ok = await confirmBox(
+    'Este libro está escaneado',
+    'Sus páginas son fotos, por eso no se puede buscar, resaltar, escuchar ni leer en modo texto. ¿Quieres que la app reconozca el texto? Se hace en este dispositivo, sin enviar nada, y puedes seguir leyendo mientras tanto.',
+    'Reconocer el texto'
+  );
+  if (ok) startOcr(book);
+}
+
+async function startOcr(book) {
+  if (ocrJob) {
+    if (ocrJob.book.id !== book.id) toast(`Primero termino de reconocer «${ocrJob.book.title}».`);
+    return;
+  }
+  const file = await db.get('files', book.id);
+  if (!file) return toast('No encuentro el archivo de este libro.');
+  const ctl = new AbortController();
+  ocrJob = { book, ctl };
+  const pill = document.createElement('div');
+  pill.className = 'ocr-pill';
+  pill.innerHTML = `<span class="ocr-spin"></span><span class="ocr-text">Preparando el reconocimiento de texto…</span><button aria-label="Detener" title="Detener (lo hecho se guarda)">×</button>`;
+  pill.querySelector('button').addEventListener('click', () => ctl.abort());
+  document.body.appendChild(pill);
+  const text = pill.querySelector('.ocr-text');
+  let pdf = null;
+  try {
+    pdf = await openPdf(file.blob);
+    let last = 0;
+    const pages = await runOcr({
+      bookId: book.id,
+      pdf,
+      signal: ctl.signal,
+      onProgress: (n, total, done) => {
+        text.textContent = `Reconociendo «${book.title}» · ${n} de ${total}`;
+        // el lector abierto va usando lo que ya está listo
+        if (n - last >= 4 || n === total) {
+          last = n;
+          reader.applyOcr(book.id, [...done].filter(([, v]) => v));
+        }
+      },
+    });
+    if (!ctl.signal.aborted) {
+      book.ocrDone = true;
+      book.scanned = true;
+      db.put('books', book);
+      reader.applyOcr(book.id, pages);
+      toast(pages.size ? `Listo: ya puedes buscar, resaltar y escuchar «${book.title}».` : `«${book.title}» ya tenía texto en todas sus páginas.`, 5000);
+    } else toast('Reconocimiento detenido. Lo hecho queda guardado y puedes seguir después.', 4500);
+  } catch (err) {
+    console.error(err);
+    toast('No pude reconocer el texto de este libro.', 4500);
+  } finally {
+    pdf?.destroy();
+    pill.classList.add('out');
+    setTimeout(() => pill.remove(), 300);
+    ocrJob = null;
+  }
 }
 
 // ---------- Leer ----------
@@ -1286,10 +1433,75 @@ function closeReader() {
 
 // ---------- Añadir libros ----------
 
+const isEpub = (f) => f.type === 'application/epub+zip' || /\.epub$/i.test(f.name);
+const isPdf = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+
+// Un EPUB: los datos y la portada vienen en el archivo; se compagina una vez para saber cuántas páginas tiene.
+// Con `sample` (los libros de muestra) se guarda directo, sin buscar en los catálogos ni preguntar.
+async function importEpub(file, { sample = null, work = null } = {}) {
+  const doc = await openEpub(file);
+  const b = doc.book;
+  doc.destroy();
+  work?.close();
+  let info = { found: false, title: b.title, author: b.author, year: b.year, subjects: [], description: b.description, covers: [] };
+  let online = null;
+  if (!sample) {
+    const work = working('Buscando tu libro en los catálogos…', 'Google Books · Open Library');
+    try {
+      const found = await identify({ meta: { Title: b.title, Author: b.author }, fileName: file.name, pageCount: doc.numPages });
+      if (found.found) info = { ...found, title: b.title || found.title, author: b.author || found.author, description: b.description || found.description, year: found.year || b.year };
+      if (!b.cover && found.covers.length) online = await fetchCover(found.covers);
+    } catch {}
+    work.close();
+  }
+  let aspect = 0.66;
+  if (b.cover) {
+    const bmp = await createImageBitmap(b.cover).catch(() => null);
+    if (bmp) {
+      aspect = bmp.width / bmp.height;
+      bmp.close?.();
+    }
+  }
+  const draft = {
+    id: uid(), format: 'epub', title: info.title || cleanTitle(file.name), author: info.author || '', year: info.year || '', description: plainText(info.description),
+    categoryId: sample ? sample.categoryId ?? null : suggestCategory(info.subjects, state.categories),
+    pageCount: doc.numPages, aspect, pageAspect: EPUB_PAGE.w / EPUB_PAGE.h, fileName: file.name, split: false, frame: epubFrame(), sheet: { ...EPUB_PAGE },
+    addedAt: Date.now(), bookmark: null, lastPage: 1, ...(sample?.extra || {}),
+  };
+  let result;
+  if (sample) {
+    const pal = b.cover ? await coverPalette(b.cover).catch(() => fallbackPalette(draft.title)) : fallbackPalette(draft.title);
+    result = { ...draft, coverBlob: b.cover, color: pal.color, ribbon: pal.ribbon };
+  } else result = await bookDialog(draft, { mode: 'new', found: info.found, covers: { pdf: b.cover || null, online: online?.blob || null }, pick: b.cover ? 'pdf' : online ? 'online' : null });
+  if (!result) return null;
+  await db.put('files', { id: result.id, blob: file });
+  return saveBook(result);
+}
+const cleanTitle = (name) => name.replace(/\.(epub|pdf)$/i, '').replace(/[_-]+/g, ' ').trim() || 'Sin título';
+const plainText = (s) => (s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
 async function importFiles(fileList) {
-  const files = [...fileList].filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-  if (!files.length) return toast('Solo puedo leer archivos PDF.');
+  const files = [...fileList].filter((f) => isPdf(f) || isEpub(f));
+  if (!files.length) return toast('Solo puedo leer archivos PDF y EPUB.');
   for (const file of files) {
+    if (isEpub(file)) {
+      const work = working(`Abriendo «${esc(file.name)}»…`, 'Compaginando el libro');
+      try {
+        await new Promise((r) => setTimeout(r, 30));
+        const book = await importEpub(file, { work });
+        work.close();
+        if (book) {
+          if (state.active !== 'all' && book.categoryId !== state.active) state.active = book.categoryId || 'all';
+          refreshShelf();
+          toast(`«${book.title}» ya está en tu estantería`);
+        }
+      } catch (err) {
+        console.error(err);
+        work.close();
+        toast(`No pude abrir «${file.name}»`);
+      }
+      continue;
+    }
     const work = working(`Abriendo «${esc(file.name)}»…`);
     try {
       const pdf = await openPdf(file);
@@ -1391,7 +1603,7 @@ function bookDialog(draft, { mode, found, covers, pick }) {
       <div class="cover-col">
         <div class="cover-preview"><img alt=""><div class="none"></div></div>
         <div class="cover-choices">
-          <button class="chip" data-c="pdf" title="Usar la primera página del PDF">Del PDF</button>
+          <button class="chip" data-c="pdf" title="${draft.format === 'epub' ? 'Usar la portada que trae el EPUB' : 'Usar la primera página del PDF'}">${draft.format === 'epub' ? 'Del EPUB' : 'Del PDF'}</button>
           <button class="chip" data-c="online" title="Portada encontrada en los catálogos">Catálogo</button>
           <button class="chip" data-c="custom" title="Subir una imagen">Subir imagen…</button>
         </div>
@@ -1404,11 +1616,11 @@ function bookDialog(draft, { mode, found, covers, pick }) {
           <label><span>Año</span><input name="year" type="text" inputmode="numeric" value="${esc(draft.year)}"></label>
           <label><span>Categoría</span><select name="cat"></select></label>
         </div>
-        <label><span>Hojas del PDF</span><select name="split" ${state.reading?.id === draft.id ? 'disabled title="Cierra el libro para cambiar esto"' : ''}>
+        <label ${draft.format === 'epub' ? 'hidden' : ''}><span>Hojas del PDF</span><select name="split" ${state.reading?.id === draft.id || draft.format === 'epub' ? 'disabled title="Cierra el libro para cambiar esto"' : ''}>
           <option value="0" ${draft.split ? '' : 'selected'}>Una página por hoja</option>
           <option value="1" ${draft.split ? 'selected' : ''}>Dos páginas por hoja (libro abierto)</option>
         </select></label>
-        <label><span>Encuadre de las páginas</span><select name="frame" ${state.reading?.id === draft.id ? 'disabled title="Cierra el libro para cambiar esto"' : ''}>
+        <label ${draft.format === 'epub' ? 'hidden' : ''}><span>Encuadre de las páginas</span><select name="frame" ${state.reading?.id === draft.id || draft.format === 'epub' ? 'disabled title="Cierra el libro para cambiar esto"' : ''}>
           <option value="1" ${draft.noFrame ? '' : 'selected'}>Márgenes de libro (automático)</option>
           <option value="0" ${draft.noFrame ? 'selected' : ''}>Original del PDF</option>
         </select></label>
@@ -1511,15 +1723,16 @@ function bookDialog(draft, { mode, found, covers, pick }) {
             chip.textContent = 'Cargando…';
             try {
               const file = await db.get('files', draft.id);
-              if (file) {
+              if (file && draft.format === 'epub') covers.pdf = (await readEpub(file.blob)).cover;
+              else if (file) {
                 const pdf = await openPdf(file.blob);
                 covers.pdf = (await renderCoverFromPdf(pdf)).blob;
                 pdf.destroy();
               }
             } catch {
-              toast('No pude leer la portada del PDF');
+              toast('No pude leer la portada del archivo');
             }
-            chip.textContent = 'Del PDF';
+            chip.textContent = draft.format === 'epub' ? 'Del EPUB' : 'Del PDF';
           }
           if (k === 'online' && !covers.online) {
             await searchOnline(chip);
@@ -2161,7 +2374,7 @@ function bindUI() {
   $('#soundPanel').addEventListener('click', (e) => {
     if (e.target.closest('[data-try]')) {
       reader.stopSpeaking();
-      const lang = ['es', 'en'].includes(state.reading?.speechLang) ? state.reading.speechLang : prefs.get('bib.lastLang') || 'es';
+      const lang = ['es', 'en'].includes(state.reading?.speechLang) ? state.reading.speechLang : prefs.get('bib.lastLang') || LANG;
       return sample(voiceFor(lang) || listVoices()[0]);
     }
     const slang = e.target.closest('[data-slang]');
